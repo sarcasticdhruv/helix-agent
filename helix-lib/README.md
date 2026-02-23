@@ -20,7 +20,7 @@ pip install "helix-agent[all]"              # every provider
 
 Or from source:
 ```bash
-git clone https://github.com/your-org/helix-agent
+git clone https://github.com/sarcasticdhruv/helix-agent
 cd helix-agent/helix-lib
 pip install -e ".[all]"
 ```
