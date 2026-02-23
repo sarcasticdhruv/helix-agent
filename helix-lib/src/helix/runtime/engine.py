@@ -14,6 +14,7 @@ Manages:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from collections.abc import Callable
@@ -142,10 +143,8 @@ class Runtime:
             asyncio.create_task(self._schedule_runner())
 
         # Block
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(*self._workers)
-        except asyncio.CancelledError:
-            pass
 
     async def stop(self) -> None:
         """Gracefully stop the runtime."""

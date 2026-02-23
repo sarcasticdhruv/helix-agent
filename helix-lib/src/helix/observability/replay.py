@@ -110,7 +110,6 @@ class FailureReplay:
         for i in range(step_n):
             span = self._spans[i]
             meta = span.get("meta", {})
-            name = span.get("name", "")
 
             # Inject override or original output
             output = self._overrides.get(i, meta.get("output"))

@@ -30,8 +30,8 @@ class GeminiProvider(LLMProvider):
     def _get_genai(self):
         try:
             import google.generativeai as genai
-        except ImportError:
-            raise ImportError("pip install google-generativeai")
+        except ImportError as err:
+            raise ImportError("pip install google-generativeai") from err
         if not self._api_key:
             raise HelixProviderError(
                 provider="google",
@@ -125,7 +125,7 @@ class GeminiProvider(LLMProvider):
                 provider="google",
                 original=e,
                 retryable=retryable,
-            )
+            ) from e
 
     def _chat_complete(self, client, history: list[dict], last_msg: str):
         """Use ChatSession for multi-turn conversations."""
@@ -184,7 +184,6 @@ class GeminiProvider(LLMProvider):
         Only includes prior turns — the final user message is handled separately.
         """
         turns = []
-        user_msgs = []
         non_system = [m for m in messages if m.get("role") != "system"]
 
         # If there's only one user message and no assistant turns, no history needed
@@ -230,7 +229,7 @@ class GeminiProvider(LLMProvider):
         except HelixProviderError:
             raise
         except Exception as e:
-            raise HelixProviderError(model=model, provider="google", original=e)
+            raise HelixProviderError(model=model, provider="google", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = self._build_prompt(messages)

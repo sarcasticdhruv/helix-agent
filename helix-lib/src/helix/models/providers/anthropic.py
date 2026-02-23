@@ -34,8 +34,8 @@ class AnthropicProvider(LLMProvider):
             self._client = anthropic.AsyncAnthropic(
                 api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"),
             )
-        except ImportError:
-            raise ImportError("anthropic package required. Install with: pip install anthropic")
+        except ImportError as err:
+            raise ImportError("anthropic package required. Install with: pip install anthropic") from err
 
     async def complete(
         self,

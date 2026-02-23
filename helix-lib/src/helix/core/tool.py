@@ -105,8 +105,8 @@ class RegisteredTool(ToolProtocol):
             coro = self._fn(**kwargs)
             try:
                 return await asyncio.wait_for(coro, timeout=self._timeout_s)
-            except TimeoutError:
-                raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s)
+            except TimeoutError as err:
+                raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s) from err
         else:
             try:
                 loop = asyncio.get_event_loop()
@@ -114,8 +114,8 @@ class RegisteredTool(ToolProtocol):
                     loop.run_in_executor(None, functools.partial(self._fn, **kwargs)),
                     timeout=self._timeout_s,
                 )
-            except TimeoutError:
-                raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s)
+            except TimeoutError as err:
+                raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s) from err
 
     def to_llm_schema(self) -> dict[str, Any]:
         """
@@ -150,8 +150,6 @@ def _extract_schema(fn: Callable) -> dict[str, Any]:
         int: "integer",
         float: "number",
         bool: "boolean",
-        list: "array",
-        dict: "object",
         list: "array",
         dict: "object",
     }
@@ -367,9 +365,7 @@ class ToolRegistryView:
     def _is_permitted(self, name: str) -> bool:
         if name in self._denied:
             return False
-        if self._allowed is not None and name not in self._allowed:
-            return False
-        return True
+        return self._allowed is None or name in self._allowed
 
     def get(self, name: str, agent_id: str = "") -> RegisteredTool:
         if not self._is_permitted(name):

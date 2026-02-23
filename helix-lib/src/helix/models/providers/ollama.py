@@ -62,7 +62,7 @@ class OllamaProvider(LLMProvider):
             retryable = "timeout" in str(e).lower() or "connect" in str(e).lower()
             raise HelixProviderError(
                 model=model, provider="ollama", original=e, retryable=retryable
-            )
+            ) from e
 
     async def stream(self, messages, model="llama3.2", **kwargs) -> AsyncIterator[str]:
         try:
@@ -71,20 +71,22 @@ class OllamaProvider(LLMProvider):
             import httpx
 
             payload = {"model": model, "messages": messages, "stream": True}
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream("POST", f"{self._host}/api/chat", json=payload) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            data = _json.loads(line)
-                            content = data.get("message", {}).get("content", "")
-                            if content:
-                                yield content
-                        except Exception:
-                            continue
+            async with (
+                httpx.AsyncClient(timeout=120.0) as client,
+                client.stream("POST", f"{self._host}/api/chat", json=payload) as resp,
+            ):
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = _json.loads(line)
+                        content = data.get("message", {}).get("content", "")
+                        if content:
+                            yield content
+                    except Exception:
+                        continue
         except Exception as e:
-            raise HelixProviderError(model=model, provider="ollama", original=e)
+            raise HelixProviderError(model=model, provider="ollama", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

@@ -16,6 +16,7 @@ Design:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -518,23 +519,19 @@ class Agent:
     ) -> None:
         if self._cache_controller is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             await self._cache_controller.semantic.set(
                 query=task,
                 context_hash=ctx.window.context_hash(),
                 response=response,
                 cost_usd=cost_usd,
             )
-        except Exception:
-            pass
 
     async def _store_plan(self, ctx: ExecutionContext, task: str) -> None:
         if self._cache_controller is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             await self._cache_controller.plan.store(task, ctx)
-        except Exception:
-            pass
 
     # ------------------------------------------------------------------
     # Safety helpers
@@ -744,10 +741,8 @@ class Agent:
                 pass
 
         if self._tracer:
-            try:
+            with contextlib.suppress(Exception):
                 self._tracer.finalize(ctx)
-            except Exception:
-                pass
 
     # ------------------------------------------------------------------
     # Initialization

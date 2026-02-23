@@ -30,8 +30,8 @@ class CohereProvider(LLMProvider):
                 import cohere
 
                 self._client = cohere.AsyncClientV2(api_key=self._api_key)
-            except ImportError:
-                raise ImportError("pip install cohere")
+            except ImportError as err:
+                raise ImportError("pip install cohere") from err
         return self._client
 
     async def complete(
@@ -49,12 +49,12 @@ class CohereProvider(LLMProvider):
             cohere_messages = self._convert_messages(messages)
             cohere_tools = self._convert_tools(tools) if tools else None
 
-            kwargs_ = dict(
-                model=model,
-                messages=cohere_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs_ = {
+                "model": model,
+                "messages": cohere_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
             if cohere_tools:
                 kwargs_["tools"] = cohere_tools
             response = await client.chat(**kwargs_)
@@ -63,7 +63,7 @@ class CohereProvider(LLMProvider):
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503"))
             raise HelixProviderError(
                 model=model, provider="cohere", original=e, retryable=retryable
-            )
+            ) from e
 
     async def stream(
         self, messages, model="command-r-plus-08-2024", **kwargs
@@ -75,7 +75,7 @@ class CohereProvider(LLMProvider):
                 if hasattr(event, "text") and event.text:
                     yield event.text
         except Exception as e:
-            raise HelixProviderError(model=model, provider="cohere", original=e)
+            raise HelixProviderError(model=model, provider="cohere", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

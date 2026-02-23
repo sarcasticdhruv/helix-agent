@@ -229,7 +229,6 @@ class Workflow:
         total_cost = 0.0
 
         for node in self._chain:
-            node_start = time.time()
             try:
                 current, sr = await self._execute_node(node, current)
                 step_results.append(sr)
@@ -315,7 +314,7 @@ class Workflow:
             until = node["until"]
             max_iter = node.get("max_iter", 10)
             result = current
-            for i in range(max_iter):
+            for _i in range(max_iter):
                 result = await s.execute(result)
                 if until(result):
                     break

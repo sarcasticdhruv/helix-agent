@@ -114,8 +114,8 @@ class OpenAICompatProvider(LLMProvider):
                     base_url=self._base_url,
                     default_headers=self._extra_headers,
                 )
-            except ImportError:
-                raise ImportError("pip install openai")
+            except ImportError as err:
+                raise ImportError("pip install openai") from err
         return self._client
 
     async def complete(
@@ -131,9 +131,9 @@ class OpenAICompatProvider(LLMProvider):
         target = model or self._default_model
         try:
             client = self._get_client()
-            kwargs_ = dict(
-                model=target, messages=messages, temperature=temperature, max_tokens=max_tokens
-            )
+            kwargs_ = {
+                "model": target, "messages": messages, "temperature": temperature, "max_tokens": max_tokens
+            }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
             if response_format:
@@ -146,7 +146,7 @@ class OpenAICompatProvider(LLMProvider):
             )
             raise HelixProviderError(
                 model=target, provider=self._base_url, original=e, retryable=retryable
-            )
+            ) from e
 
     async def stream(self, messages, model=None, **kwargs) -> AsyncIterator[str]:
         target = model or self._default_model
@@ -157,7 +157,7 @@ class OpenAICompatProvider(LLMProvider):
                     if event.choices and event.choices[0].delta.content:
                         yield event.choices[0].delta.content
         except Exception as e:
-            raise HelixProviderError(model=target, provider=self._base_url, original=e)
+            raise HelixProviderError(model=target, provider=self._base_url, original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

@@ -32,8 +32,8 @@ class TogetherProvider(LLMProvider):
                 from together import AsyncTogether
 
                 self._client = AsyncTogether(api_key=self._api_key)
-            except ImportError:
-                raise ImportError("pip install together")
+            except ImportError as err:
+                raise ImportError("pip install together") from err
         return self._client
 
     async def complete(
@@ -47,16 +47,16 @@ class TogetherProvider(LLMProvider):
     ) -> ModelResponse:
         try:
             client = self._get_client()
-            kwargs_ = dict(
-                model=model, messages=messages, temperature=temperature, max_tokens=max_tokens
-            )
+            kwargs_ = {
+                "model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens
+            }
             response = await client.chat.completions.create(**kwargs_)
             return self._normalize(response, model)
         except Exception as e:
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503"))
             raise HelixProviderError(
                 model=model, provider="together", original=e, retryable=retryable
-            )
+            ) from e
 
     async def stream(
         self, messages, model="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", **kwargs
@@ -70,7 +70,7 @@ class TogetherProvider(LLMProvider):
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
         except Exception as e:
-            raise HelixProviderError(model=model, provider="together", original=e)
+            raise HelixProviderError(model=model, provider="together", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

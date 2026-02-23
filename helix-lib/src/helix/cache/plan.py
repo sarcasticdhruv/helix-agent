@@ -11,6 +11,7 @@ Stores WHAT tools were called in WHAT order, not the specific content.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -94,15 +95,13 @@ class PlanStore:
             return {}
 
     def _save(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._path.write_text(
                 json.dumps(
                     {k: v.model_dump() for k, v in self._templates.items()},
                     default=str,
                 )
             )
-        except Exception:
-            pass
 
     async def upsert(self, template: PlanTemplate) -> None:
         async with self._lock:

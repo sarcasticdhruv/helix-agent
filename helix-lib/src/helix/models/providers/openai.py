@@ -32,8 +32,8 @@ class OpenAIProvider(LLMProvider):
                 api_key=api_key or os.environ.get("OPENAI_API_KEY"),
                 base_url=base_url,
             )
-        except ImportError:
-            raise ImportError("openai package required. Install with: pip install openai")
+        except ImportError as err:
+            raise ImportError("openai package required. Install with: pip install openai") from err
 
     async def complete(
         self,
@@ -87,9 +87,8 @@ class OpenAIProvider(LLMProvider):
                 max_tokens=max_tokens,
             ) as stream:
                 async for event in stream:
-                    if hasattr(event, "delta") and hasattr(event.delta, "content"):
-                        if event.delta.content:
-                            yield event.delta.content
+                    if hasattr(event, "delta") and hasattr(event.delta, "content") and event.delta.content:
+                        yield event.delta.content
         except Exception as e:
             raise HelixProviderError(
                 provider="openai", model=model, reason=str(e), retryable=False

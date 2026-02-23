@@ -32,8 +32,8 @@ class MistralProvider(LLMProvider):
                 from mistralai import Mistral
 
                 self._client = Mistral(api_key=self._api_key)
-            except ImportError:
-                raise ImportError("pip install mistralai")
+            except ImportError as err:
+                raise ImportError("pip install mistralai") from err
         return self._client
 
     async def complete(
@@ -47,9 +47,9 @@ class MistralProvider(LLMProvider):
     ) -> ModelResponse:
         try:
             client = self._get_client()
-            kwargs_ = dict(
-                messages=messages, model=model, temperature=temperature, max_tokens=max_tokens
-            )
+            kwargs_ = {
+                "messages": messages, "model": model, "temperature": temperature, "max_tokens": max_tokens
+            }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
             response = await client.chat.complete_async(**kwargs_)
@@ -58,7 +58,7 @@ class MistralProvider(LLMProvider):
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503"))
             raise HelixProviderError(
                 model=model, provider="mistral", original=e, retryable=retryable
-            )
+            ) from e
 
     async def stream(self, messages, model="mistral-large-latest", **kwargs) -> AsyncIterator[str]:
         try:
@@ -68,7 +68,7 @@ class MistralProvider(LLMProvider):
                 if delta:
                     yield delta
         except Exception as e:
-            raise HelixProviderError(model=model, provider="mistral", original=e)
+            raise HelixProviderError(model=model, provider="mistral", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

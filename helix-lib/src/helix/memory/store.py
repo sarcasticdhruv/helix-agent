@@ -14,6 +14,7 @@ Design:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -89,10 +90,8 @@ class WriteAheadLog:
             return []
 
     def _save(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._path.write_text(json.dumps([e.model_dump() for e in self._pending], default=str))
-        except Exception:
-            pass  # WAL save failure is not fatal; entry stays in-memory pending
 
     async def enqueue(self, entry: MemoryEntry) -> None:
         async with self._lock:

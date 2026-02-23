@@ -23,8 +23,8 @@ class OpenAIEmbedder(EmbeddingProvider):
                 import openai
 
                 self._client = openai.AsyncOpenAI(api_key=self._api_key)
-            except ImportError:
-                raise ImportError("pip install openai")
+            except ImportError as err:
+                raise ImportError("pip install openai") from err
         return self._client
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:

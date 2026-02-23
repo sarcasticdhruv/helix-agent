@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -25,12 +25,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # ---------------------------------------------------------------------------
 
 
-class AgentMode(str, Enum):
+class AgentMode(StrEnum):
     EXPLORE = "explore"
     PRODUCTION = "production"
 
 
-class MemoryKind(str, Enum):
+class MemoryKind(StrEnum):
     FACT = "fact"
     PREFERENCE = "preference"
     TOOL_RESULT = "tool_result"
@@ -38,13 +38,13 @@ class MemoryKind(str, Enum):
     EPISODE_REF = "episode_ref"
 
 
-class EpisodeOutcome(str, Enum):
+class EpisodeOutcome(StrEnum):
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL = "partial"
 
 
-class FailureClass(str, Enum):
+class FailureClass(StrEnum):
     TIMEOUT = "timeout"
     AUTH_ERROR = "auth_error"
     SCHEMA_MISMATCH = "schema_mismatch"
@@ -57,21 +57,21 @@ class FailureClass(str, Enum):
     UNKNOWN = "unknown"
 
 
-class HITLDecision(str, Enum):
+class HITLDecision(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
     ESCALATE = "escalate"
     MODIFY = "modify"
 
 
-class ContextMessageRole(str, Enum):
+class ContextMessageRole(StrEnum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
 
 
-class WorkflowMode(str, Enum):
+class WorkflowMode(StrEnum):
     SEQUENTIAL = "sequential"
     PARALLEL = "parallel"
     CONDITIONAL = "conditional"
@@ -81,19 +81,19 @@ class WorkflowMode(str, Enum):
     HUMAN_REVIEW = "human_review"
 
 
-class BudgetStrategy(str, Enum):
+class BudgetStrategy(StrEnum):
     STOP = "stop"  # Hard stop when budget exceeded (default)
     DEGRADE = "degrade"  # Switch to cheaper models as budget depletes
 
 
-class ComplexityTier(str, Enum):
+class ComplexityTier(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     MAX = "max"
 
 
-class AuditEventType(str, Enum):
+class AuditEventType(StrEnum):
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TOOL_FAILURE = "tool_failure"

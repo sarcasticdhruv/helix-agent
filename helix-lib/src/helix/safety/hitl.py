@@ -81,8 +81,8 @@ class WebhookTransport(HITLTransport):
     async def send_request(self, request: HITLRequest) -> HITLResponse:
         try:
             import httpx
-        except ImportError:
-            raise ImportError("httpx required for WebhookTransport: pip install httpx")
+        except ImportError as err:
+            raise ImportError("httpx required for WebhookTransport: pip install httpx") from err
 
         async with httpx.AsyncClient() as client:
             # Fire the request
@@ -153,8 +153,8 @@ class QueueTransport(HITLTransport):
                 import redis.asyncio as aioredis
 
                 self._redis = await aioredis.from_url(self._redis_url)
-            except ImportError:
-                raise ImportError("redis package required: pip install redis")
+            except ImportError as err:
+                raise ImportError("redis package required: pip install redis") from err
         return self._redis
 
     async def send_request(self, request: HITLRequest) -> HITLResponse:
@@ -230,15 +230,19 @@ class HITLController:
         """Return True if HITL should be triggered for this action."""
         if not self._config.enabled:
             return False
-        if confidence is not None and self._config.on_confidence_below:
-            if confidence < self._config.on_confidence_below:
-                return True
+        if (
+            confidence is not None
+            and self._config.on_confidence_below
+            and confidence < self._config.on_confidence_below
+        ):
+            return True
         if tool_name and tool_name in self._config.on_tool_risk:
             return True
-        if cost_usd is not None and self._config.on_cost_above_usd:
-            if cost_usd > self._config.on_cost_above_usd:
-                return True
-        return False
+        return (
+            cost_usd is not None
+            and self._config.on_cost_above_usd
+            and cost_usd > self._config.on_cost_above_usd
+        )
 
     async def send_request(self, request: HITLRequest) -> HITLResponse:
         return await self._transport.send_request(request)

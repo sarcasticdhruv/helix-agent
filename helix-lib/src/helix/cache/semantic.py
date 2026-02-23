@@ -197,7 +197,4 @@ class SemanticCache:
     def _should_cache(self, query: str) -> bool:
         """Skip cache for queries containing excluded patterns."""
         q_lower = query.lower()
-        for pattern in self._config.exclude_patterns:
-            if pattern.lower() in q_lower:
-                return False
-        return True
+        return all(pattern.lower() not in q_lower for pattern in self._config.exclude_patterns)

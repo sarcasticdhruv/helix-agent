@@ -31,8 +31,8 @@ class GroqProvider(LLMProvider):
                 from groq import AsyncGroq
 
                 self._client = AsyncGroq(api_key=self._api_key)
-            except ImportError:
-                raise ImportError("pip install groq")
+            except ImportError as err:
+                raise ImportError("pip install groq") from err
         return self._client
 
     async def complete(
@@ -46,16 +46,16 @@ class GroqProvider(LLMProvider):
     ) -> ModelResponse:
         try:
             client = self._get_client()
-            kwargs_ = dict(
-                messages=messages, model=model, temperature=temperature, max_tokens=max_tokens
-            )
+            kwargs_ = {
+                "messages": messages, "model": model, "temperature": temperature, "max_tokens": max_tokens
+            }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
             response = await client.chat.completions.create(**kwargs_)
             return self._normalize(response, model)
         except Exception as e:
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503", "529"))
-            raise HelixProviderError(model=model, provider="groq", original=e, retryable=retryable)
+            raise HelixProviderError(model=model, provider="groq", original=e, retryable=retryable) from e
 
     async def stream(
         self, messages, model="llama-3.3-70b-versatile", **kwargs
@@ -67,7 +67,7 @@ class GroqProvider(LLMProvider):
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
         except Exception as e:
-            raise HelixProviderError(model=model, provider="groq", original=e)
+            raise HelixProviderError(model=model, provider="groq", original=e) from e
 
     async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))

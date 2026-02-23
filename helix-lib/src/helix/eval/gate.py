@@ -9,6 +9,7 @@ CI/CD integration: exits with code 1 on regression.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from dataclasses import dataclass, field
@@ -127,7 +128,5 @@ class RegressionGate:
     def _save_result(self, result: Any) -> None:
         self._results_dir.mkdir(parents=True, exist_ok=True)
         path = self._results_dir / f"{result.id}.json"
-        try:
+        with contextlib.suppress(Exception):
             path.write_text(json.dumps(result.model_dump(mode="json"), default=str))
-        except Exception:
-            pass
