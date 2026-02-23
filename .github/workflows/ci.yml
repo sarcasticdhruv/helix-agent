@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: "Test — Python ${{ matrix.python-version }}"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install package + test deps
+        working-directory: helix-lib
+        run: |
+          pip install -e ".[dev,gemini]"
+
+      - name: Run tests
+        working-directory: helix-lib
+        run: |
+          pytest tests/ --tb=short -q
+
+      - name: Upload coverage report
+        if: matrix.python-version == '3.13'
+        working-directory: helix-lib
+        run: |
+          pytest tests/ --cov=helix --cov-report=xml -q
+        continue-on-error: true
+
+  lint:
+    name: "Lint (ruff)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install ruff
+        run: pip install ruff>=0.4
+
+      - name: Ruff check
+        working-directory: helix-lib
+        run: ruff check src/ --output-format=github
+
+      - name: Ruff format check
+        working-directory: helix-lib
+        run: ruff format src/ --check

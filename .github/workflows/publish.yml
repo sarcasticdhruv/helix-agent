@@ -1,0 +1,132 @@
+name: Publish to PyPI
+
+# Triggers on a version tag like v0.3.0
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write   # needed to create a GitHub Release
+  id-token: write   # needed for PyPI Trusted Publishing (OIDC — no API token required)
+
+jobs:
+  # ── 1. Run tests before publishing ──────────────────────────────────────────
+  test:
+    name: "Test before publish"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install + test
+        working-directory: helix-lib
+        run: |
+          pip install -e ".[dev,gemini]"
+          pytest tests/ -q --tb=short
+
+  # ── 2. Build the distribution ────────────────────────────────────────────────
+  build:
+    name: "Build sdist + wheel"
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build
+        working-directory: helix-lib
+        run: python -m build
+
+      - name: Verify distributions
+        working-directory: helix-lib
+        run: twine check dist/*
+
+      - name: Record hashes (for provenance)
+        id: hash
+        working-directory: helix-lib
+        run: |
+          cd dist
+          echo "hashes=$(sha256sum * | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: helix-lib/dist/
+          if-no-files-found: error
+
+  # ── 3. Publish to PyPI via Trusted Publishing (no API token needed) ──────────
+  publish-pypi:
+    name: "Publish to PyPI"
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi   # maps to the GitHub Environment you'll create (see README)
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No username/password needed — OIDC Trusted Publishing handles auth.
+        # See: https://docs.pypi.org/trusted-publishers/
+
+  # ── 4. Create a GitHub Release with the built files ──────────────────────────
+  github-release:
+    name: "GitHub Release"
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Extract tag name
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Parse changelog for this release
+        id: changelog
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          # Strip the leading "v" to match Changelog section headings like [0.3.0]
+          SEMVER="${VERSION#v}"
+          # Extract lines between this version heading and the next
+          NOTES=$(awk "/^## \[${SEMVER}\]/{found=1; next} found && /^## \[/{exit} found{print}" helix-lib/CHANGELOG.md)
+          # Multiline output workaround
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.version }}
+          name: "helix-agent ${{ steps.tag.outputs.version }}"
+          body: ${{ steps.changelog.outputs.notes }}
+          files: dist/*

@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helix-agent"
+version = "0.3.0"
+description = "Production-grade AI agent framework — cost governance, memory, caching, multi-agent teams, and built-in eval"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Helix Contributors" }]
+keywords = [
+    "ai", "agents", "llm", "multi-agent", "framework",
+    "openai", "anthropic", "gemini", "groq", "mistral",
+    "autogen", "crewai", "langchain",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = ["pydantic>=2.0"]
+
+[project.optional-dependencies]
+# ── Individual providers ──────────────────────────────────────────────────────
+gemini      = ["google-generativeai>=0.8"]
+openai      = ["openai>=1.0"]
+anthropic   = ["anthropic>=0.20"]
+groq        = ["groq>=0.9"]
+mistral     = ["mistralai>=1.0"]
+cohere      = ["cohere>=5.0"]
+together    = ["together>=1.2"]
+azure       = ["openai>=1.0"]        # Azure uses the openai package
+openrouter  = ["openai>=1.0"]        # OpenRouter uses the openai package
+deepseek    = ["openai>=1.0"]        # DeepSeek uses the openai package
+
+# ── All cloud API providers bundled ──────────────────────────────────────────
+providers = [
+    "google-generativeai>=0.8",
+    "openai>=1.0",
+    "anthropic>=0.20",
+    "groq>=0.9",
+    "mistralai>=1.0",
+    "cohere>=5.0",
+    "together>=1.2",
+]
+
+# ── Other optional features ───────────────────────────────────────────────────
+tiktoken = ["tiktoken>=0.5"]
+http     = ["httpx>=0.25"]
+search   = ["duckduckgo-search>=3.9"]
+redis    = ["redis>=5.0"]
+schedule = ["croniter>=2.0"]
+
+# ── Dev tools ─────────────────────────────────────────────────────────────────
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.0",
+]
+
+# ── Full install — everything ─────────────────────────────────────────────────
+all = [
+    "google-generativeai>=0.8",
+    "openai>=1.0",
+    "anthropic>=0.20",
+    "groq>=0.9",
+    "mistralai>=1.0",
+    "cohere>=5.0",
+    "together>=1.2",
+    "tiktoken>=0.5",
+    "httpx>=0.25",
+    "duckduckgo-search>=3.9",
+    "redis>=5.0",
+    "croniter>=2.0",
+]
+
+[project.scripts]
+helix = "helix.cli.__main__:main"
+
+[project.urls]
+# TODO: replace "your-org" with your actual GitHub username/org
+Homepage   = "https://github.com/your-org/helix-agent"
+Repository = "https://github.com/your-org/helix-agent"
+Changelog  = "https://github.com/your-org/helix-agent/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/your-org/helix-agent/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+helix = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--tb=short -q"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.coverage.run]
+source = ["helix"]
+omit = ["tests/*", "examples/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 70
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312", "py313"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # do not perform function calls in default args
+    "SIM108",  # ternary operator — sometimes less readable
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false

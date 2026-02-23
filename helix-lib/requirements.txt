@@ -1,0 +1,25 @@
+# helix-agent core requirements
+# Install specific providers: pip install helix-agent[openai,anthropic,gemini]
+# Install everything:         pip install helix-agent[all]
+
+# ── Core (always required) ──────────────────────────────────────────────────
+pydantic>=2.0
+
+# ── LLM Providers (install at least one) ───────────────────────────────────
+google-generativeai>=0.8    # Gemini 2.5 Flash, 2.0 Flash, 2.5 Pro  ← free tier available
+# openai>=1.0                # GPT-4o, GPT-4o-mini, o1, o3; also Azure, OpenRouter, DeepSeek, xAI
+# anthropic>=0.20            # Claude Opus, Sonnet, Haiku
+# groq>=0.9                   # Llama, Mixtral, Gemma (ultra-fast inference)
+# mistralai>=1.0              # Mistral Large/Small, Codestral, Pixtral
+# cohere>=5.0                 # Command R+, Command R
+# together>=1.2               # 200+ open models via Together AI
+# Ollama: no package needed — just install Ollama from https://ollama.com
+
+# ── Token counting ──────────────────────────────────────────────────────────
+tiktoken>=0.5
+
+# ── HTTP (fetch_url tool, Ollama provider, WebhookTransport) ────────────────
+httpx>=0.25
+
+# ── Web search built-in tool ─────────────────────────────────────────────────
+duckduckgo-search>=3.9

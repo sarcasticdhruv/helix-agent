@@ -1,0 +1,8 @@
+# All optional dependencies
+-r requirements.txt
+
+# Redis backends
+redis>=5.0
+
+# Scheduled workflows
+croniter>=2.0
