@@ -87,7 +87,11 @@ class OpenAIProvider(LLMProvider):
                 max_tokens=max_tokens,
             ) as stream:
                 async for event in stream:
-                    if hasattr(event, "delta") and hasattr(event.delta, "content") and event.delta.content:
+                    if (
+                        hasattr(event, "delta")
+                        and hasattr(event.delta, "content")
+                        and event.delta.content
+                    ):
                         yield event.delta.content
         except Exception as e:
             raise HelixProviderError(

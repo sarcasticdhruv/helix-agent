@@ -47,7 +47,10 @@ class GroqProvider(LLMProvider):
         try:
             client = self._get_client()
             kwargs_ = {
-                "messages": messages, "model": model, "temperature": temperature, "max_tokens": max_tokens
+                "messages": messages,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
             }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
@@ -55,7 +58,9 @@ class GroqProvider(LLMProvider):
             return self._normalize(response, model)
         except Exception as e:
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503", "529"))
-            raise HelixProviderError(model=model, provider="groq", original=e, retryable=retryable) from e
+            raise HelixProviderError(
+                model=model, provider="groq", original=e, retryable=retryable
+            ) from e
 
     async def stream(
         self, messages, model="llama-3.3-70b-versatile", **kwargs

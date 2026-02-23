@@ -48,7 +48,10 @@ class TogetherProvider(LLMProvider):
         try:
             client = self._get_client()
             kwargs_ = {
-                "model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
             }
             response = await client.chat.completions.create(**kwargs_)
             return self._normalize(response, model)

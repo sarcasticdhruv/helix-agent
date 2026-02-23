@@ -90,7 +90,9 @@ class AzureOpenAIProvider(LLMProvider):
             return self._normalize(response, model)
         except Exception as e:
             retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503", "529"))
-            raise HelixProviderError(model=model, provider="azure", original=e, retryable=retryable) from e
+            raise HelixProviderError(
+                model=model, provider="azure", original=e, retryable=retryable
+            ) from e
 
     async def stream(self, messages, model="gpt-4o", **kwargs) -> AsyncIterator[str]:
         try:

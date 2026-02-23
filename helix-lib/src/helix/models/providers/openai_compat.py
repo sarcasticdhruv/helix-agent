@@ -132,7 +132,10 @@ class OpenAICompatProvider(LLMProvider):
         try:
             client = self._get_client()
             kwargs_ = {
-                "model": target, "messages": messages, "temperature": temperature, "max_tokens": max_tokens
+                "model": target,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
             }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]

@@ -48,7 +48,10 @@ class MistralProvider(LLMProvider):
         try:
             client = self._get_client()
             kwargs_ = {
-                "messages": messages, "model": model, "temperature": temperature, "max_tokens": max_tokens
+                "messages": messages,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
             }
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
