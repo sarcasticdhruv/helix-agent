@@ -12,20 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from helix.config import CacheConfig, PlanTemplate
 from helix.interfaces import EmbeddingProvider
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     import math
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -33,7 +31,7 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
     return dot / (mag_a * mag_b)
 
 
-def _extract_keywords(text: str) -> List[str]:
+def _extract_keywords(text: str) -> list[str]:
     """Simple keyword extraction — no NLTK dependency."""
     import re
     stop = {
@@ -52,10 +50,10 @@ class PlanStore:
     def __init__(self, store_path: Path) -> None:
         self._path = store_path
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._templates: Dict[str, PlanTemplate] = self._load()
+        self._templates: dict[str, PlanTemplate] = self._load()
         self._lock = asyncio.Lock()
 
-    def _load(self) -> Dict[str, PlanTemplate]:
+    def _load(self) -> dict[str, PlanTemplate]:
         if not self._path.exists():
             return {}
         try:
@@ -94,7 +92,7 @@ class PlanStore:
                 self._templates[template.id] = template
             self._save()
 
-    async def all(self) -> List[PlanTemplate]:
+    async def all(self) -> list[PlanTemplate]:
         async with self._lock:
             return list(self._templates.values())
 
@@ -186,7 +184,7 @@ class PlanCache:
             tool_sequence = [tc.tool_name for tc in ctx.tool_calls]
             steps_desc = self._describe_steps(ctx)
 
-            embedding: List[float] = []
+            embedding: list[float] = []
             if self._embedder:
                 embedding = await self._embedder.embed_one(task)
 
@@ -211,7 +209,7 @@ class PlanCache:
             lines.append(f"  {i}. Call {tc.tool_name} to gather information")
         return "\n".join(lines)
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         return {
             "plan_hits": self._hits,
             "estimated_saved_usd": round(self._total_saved_usd, 6),

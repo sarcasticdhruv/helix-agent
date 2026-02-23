@@ -1,0 +1,92 @@
+name: Bug Report
+description: Report a bug or unexpected behaviour in Helix.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill in as much detail as possible.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug.
+      placeholder: "When I call helix.run(agent, ...) with output_schema=..., it returns..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest possible code snippet that reproduces the issue.
+      render: python
+      placeholder: |
+        import helix
+
+        agent = helix.Agent(name="Test", role="Assistant", goal="Help")
+        result = helix.run(agent, "Hello")
+        print(result)  # bug is here
+    validations:
+      required: true
+
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Full traceback
+      description: Paste the complete error traceback.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: helix-version
+    attributes:
+      label: Helix version
+      description: Run `python -c "import helix; print(helix.__version__)"`
+      placeholder: "0.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.13.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: LLM provider / model
+      description: Which provider and model were you using when the bug occurred?
+      placeholder: "Gemini / models/gemini-2.5-flash"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am using the latest version of helix-agent.
+          required: false

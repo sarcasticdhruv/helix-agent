@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/YOUR_USERNAME/helix-agent/security/advisories/new
+    about: Please report security vulnerabilities privately via GitHub's private advisory feature.
+  - name: Question / Discussion
+    url: https://github.com/YOUR_USERNAME/helix-agent/discussions
+    about: Ask questions and discuss ideas in GitHub Discussions.

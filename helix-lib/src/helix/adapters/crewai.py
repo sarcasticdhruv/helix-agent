@@ -9,6 +9,6 @@ Usage::
     from helix.adapters.crewai import from_crewai
 """
 
-from helix.adapters.universal import from_crewai, CrewAIWrapper
+from helix.adapters.universal import CrewAIWrapper, from_crewai
 
 __all__ = ["from_crewai", "CrewAIWrapper"]

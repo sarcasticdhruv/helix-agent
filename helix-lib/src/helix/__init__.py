@@ -82,8 +82,8 @@ _apply_saved_config()
 def run(
     agent: Agent,
     task: str,
-    session_id: Optional[str] = None,
-    output_schema: Optional[Any] = None,
+    session_id: str | None = None,
+    output_schema: Any | None = None,
 ) -> AgentResult:
     """
     Run an agent synchronously. Works in plain scripts, notebooks, and
@@ -132,8 +132,8 @@ def run(
 async def run_async(
     agent: Agent,
     task: str,
-    session_id: Optional[str] = None,
-    output_schema: Optional[Any] = None,
+    session_id: str | None = None,
+    output_schema: Any | None = None,
 ) -> AgentResult:
     """
     Async version of :func:`helix.run`. Use this inside ``async def`` functions.
@@ -188,7 +188,7 @@ def eval_suite(name: str, **kwargs: Any) -> Any:
 
 
 try:
-    from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PNFE
+    from importlib.metadata import PackageNotFoundError as _PNFE, version as _pkg_version
     __version__: str = _pkg_version("helix-agent")
 except _PNFE:  # editable / source install without metadata
     __version__ = "0.3.0"

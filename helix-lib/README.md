@@ -385,9 +385,33 @@ helix/
 
 ---
 
+## Contributing
+
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+
+```bash
+# Fork the repo, then:
+git clone https://github.com/YOUR_USERNAME/helix-agent
+cd helix-agent/helix-lib
+pip install -e ".[dev,gemini]"
+pytest tests/   # make sure everything passes
+```
+
+---
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START -->
+| Avatar | Name | Role |
+|:---:|:---:|:---:|
+| <img src="https://github.com/identicons/dhruvchoudhary.png" width="60" height="60"> | **Dhruv Choudhary** | Author & Maintainer |
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+---
+
 ## License
 
-MIT
+Copyright © 2026 **Dhruv Choudhary**. Licensed under the [Apache License 2.0](LICENSE).
 
 ---
 

@@ -27,10 +27,11 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from helix.config import AgentConfig, AgentMode, BudgetConfig, ModelConfig
+from helix.config import AgentConfig, AgentMode, BudgetConfig
 from helix.context import ExecutionContext
 
 
@@ -121,20 +122,19 @@ class HelixLLMShim:
             # Sync cost check — run gate in executor if in async context
             try:
                 loop = asyncio.get_event_loop()
-                if loop.is_running():
+                if loop.is_running() and (
+                    shim._context.cost.budget_usd is not None
+                    and shim._context.cost.spent_usd + estimated_cost
+                    > shim._context.cost.budget_usd
+                ):
                     # Best effort: check synchronously
-                    if (
-                        shim._context.cost.budget_usd is not None
-                        and shim._context.cost.spent_usd + estimated_cost
-                        > shim._context.cost.budget_usd
-                    ):
-                        from helix.errors import BudgetExceededError
-                        raise BudgetExceededError(
-                            agent_id=shim._context.config.agent_id,
-                            budget_usd=shim._context.cost.budget_usd,
-                            spent_usd=shim._context.cost.spent_usd,
-                            attempted_usd=estimated_cost,
-                        )
+                    from helix.errors import BudgetExceededError
+                    raise BudgetExceededError(
+                        agent_id=shim._context.config.agent_id,
+                        budget_usd=shim._context.cost.budget_usd,
+                        spent_usd=shim._context.cost.spent_usd,
+                        attempted_usd=estimated_cost,
+                    )
             except RuntimeError:
                 pass
 
@@ -188,10 +188,8 @@ class HelixLLMShim:
 
     def _log_call(self, method: str, cost_usd: float, duration_ms: float) -> None:
         """Non-blocking log to context trace."""
-        try:
+        with contextlib.suppress(Exception):
             self._context.model_per_step.append(self._model_name)
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +258,7 @@ def from_crewai(
     budget_usd: float,
     mode: AgentMode = AgentMode.PRODUCTION,
     loop_limit: int = 20,
-) -> "CrewAIWrapper":
+) -> CrewAIWrapper:
     """
     Run a CrewAI crew under Helix governance.
 
@@ -274,7 +272,7 @@ def from_crewai(
         loop_limit: Maximum task iterations.
     """
     config = AgentConfig(
-        name=f"crewai-crew",
+        name="crewai-crew",
         role="crew",
         goal="Execute CrewAI crew under Helix governance",
         mode=mode,
@@ -305,7 +303,7 @@ class CrewAIWrapper:
         self._context = context
         self._config = config
 
-    async def run(self, inputs: Optional[Dict[str, Any]] = None) -> Any:
+    async def run(self, inputs: dict[str, Any] | None = None) -> Any:
         try:
             if asyncio.iscoroutinefunction(self._crew.kickoff):
                 result = await self._crew.kickoff(inputs=inputs or {})
@@ -337,7 +335,7 @@ def from_langchain(
     chain: Any,
     budget_usd: float,
     mode: AgentMode = AgentMode.PRODUCTION,
-) -> "LangChainWrapper":
+) -> LangChainWrapper:
     """
     Run a LangChain chain or agent under Helix governance.
 
@@ -404,7 +402,7 @@ def from_autogen(
     agent: Any,
     budget_usd: float,
     mode: AgentMode = AgentMode.PRODUCTION,
-) -> "AutoGenWrapper":
+) -> AutoGenWrapper:
     """
     Run an AutoGen ConversableAgent under Helix governance.
 
@@ -440,7 +438,7 @@ class AutoGenWrapper:
     async def run(
         self,
         message: str,
-        sender: Optional[Any] = None,
+        sender: Any | None = None,
     ) -> Any:
         try:
             if sender is None:

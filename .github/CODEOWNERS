@@ -1,0 +1,5 @@
+# CODEOWNERS — every PR requires a review from the maintainer.
+# Replace @your-github-username below with your actual GitHub handle.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+*  @your-github-username

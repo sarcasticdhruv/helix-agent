@@ -9,7 +9,7 @@ Usage::
     from helix.adapters.langchain import from_langchain, from_langgraph
 """
 
-from helix.adapters.universal import from_langchain, LangChainWrapper, _patch_langchain_llms
+from helix.adapters.universal import LangChainWrapper, from_langchain
 
 __all__ = ["from_langchain", "LangChainWrapper"]
 
@@ -23,9 +23,9 @@ async def from_langgraph(
     Run a compiled LangGraph graph under Helix governance.
     Patches all LLMs inside the graph's nodes.
     """
+    from helix.adapters.universal import HelixLLMShim, _guess_model_name
     from helix.config import AgentConfig, AgentMode, BudgetConfig
     from helix.context import ExecutionContext
-    from helix.adapters.universal import HelixLLMShim, _guess_model_name
 
     config = AgentConfig(
         name="langgraph",
@@ -39,7 +39,7 @@ async def from_langgraph(
 
     # Patch nodes if accessible
     nodes = getattr(compiled_graph, "nodes", {})
-    for node_name, node in nodes.items():
+    for _, node in nodes.items():
         if hasattr(node, "llm"):
             model_name = _guess_model_name(node.llm)
             node.llm = HelixLLMShim(underlying=node.llm, context=ctx, model_name=model_name)

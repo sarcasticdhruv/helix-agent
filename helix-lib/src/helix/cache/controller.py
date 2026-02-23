@@ -11,7 +11,7 @@ The controller is the only cache object Agent needs to know about.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from helix.cache.plan import PlanCache
 from helix.cache.prefix import PrefixCacheHook
@@ -28,8 +28,8 @@ class CacheController:
     def __init__(
         self,
         config: CacheConfig,
-        semantic: Optional[SemanticCache] = None,
-        plan: Optional[PlanCache] = None,
+        semantic: SemanticCache | None = None,
+        plan: PlanCache | None = None,
     ) -> None:
         self._config = config
         self.semantic = semantic or SemanticCache(config=config)
@@ -45,7 +45,7 @@ class CacheController:
         await self.semantic.initialize(embedder=embedder)
         await self.plan.initialize(embedder=embedder)
 
-    async def lookup(self, query: str, context_hash: str) -> Optional[CacheHit]:
+    async def lookup(self, query: str, context_hash: str) -> CacheHit | None:
         """
         Check semantic cache first.
         If miss, plan cache match is handled separately by the agent
@@ -58,7 +58,7 @@ class CacheController:
             return hit
         return None
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         total = self._total_requests
         return {
             "total_requests": total,

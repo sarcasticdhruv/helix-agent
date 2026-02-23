@@ -9,6 +9,6 @@ Usage::
     from helix.adapters.autogen import from_autogen
 """
 
-from helix.adapters.universal import from_autogen, AutoGenWrapper
+from helix.adapters.universal import AutoGenWrapper, from_autogen
 
 __all__ = ["from_autogen", "AutoGenWrapper"]

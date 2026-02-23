@@ -9,7 +9,8 @@ description = "Production-grade AI agent framework — cost governance, memory, 
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-authors = [{ name = "Helix Contributors" }]
+authors = [{ name = "Dhruv Choudhary" }]
+maintainers = [{ name = "Dhruv Choudhary" }]
 keywords = [
     "ai", "agents", "llm", "multi-agent", "framework",
     "openai", "anthropic", "gemini", "groq", "mistral",
