@@ -10,9 +10,9 @@ Powers: helix trace <run_id> --diff <run_id_2>
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -21,14 +21,14 @@ class DivergencePoint:
     span_name: str
     state_a: Any
     state_b: Any
-    tool_name: Optional[str] = None
+    tool_name: str | None = None
 
 
 @dataclass
 class DivergenceReport:
     identical: bool
-    diverged_at_step: Optional[int] = None
-    diverged_at_span: Optional[str] = None
+    diverged_at_step: int | None = None
+    diverged_at_span: str | None = None
     run_a_state: Any = None
     run_b_state: Any = None
     likely_cause: str = ""
@@ -44,7 +44,7 @@ class GhostDebugResolver:
     def __init__(self, trace_dir: str = ".helix/traces") -> None:
         self._trace_dir = Path(trace_dir)
 
-    def load_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+    def load_trace(self, run_id: str) -> dict[str, Any] | None:
         path = self._trace_dir / f"{run_id}.json"
         if not path.exists():
             return None
@@ -76,8 +76,8 @@ class GhostDebugResolver:
 
     def compare_traces(
         self,
-        trace_a: Dict[str, Any],
-        trace_b: Dict[str, Any],
+        trace_a: dict[str, Any],
+        trace_b: dict[str, Any],
     ) -> DivergenceReport:
         spans_a = trace_a.get("spans", [])
         spans_b = trace_b.get("spans", [])
@@ -98,11 +98,11 @@ class GhostDebugResolver:
 
     def _find_divergence(
         self,
-        spans_a: List[Dict],
-        spans_b: List[Dict],
-    ) -> Optional[DivergencePoint]:
+        spans_a: list[dict],
+        spans_b: list[dict],
+    ) -> DivergencePoint | None:
         """Walk span lists in parallel and return first point of difference."""
-        for i, (sa, sb) in enumerate(zip(spans_a, spans_b)):
+        for i, (sa, sb) in enumerate(zip(spans_a, spans_b, strict=False)):
             name_a = sa.get("name", "")
             name_b = sb.get("name", "")
             if name_a != name_b:

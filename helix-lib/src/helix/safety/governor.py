@@ -11,28 +11,42 @@ it prevents it from happening.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from helix.config import BudgetConfig, BudgetStrategy, ModelPricing, TokenUsage
+from helix.config import BudgetConfig, ModelPricing, TokenUsage
 from helix.errors import BudgetExceededError
 
-
 # Default pricing table (USD per 1K tokens)
-DEFAULT_PRICING: Dict[str, ModelPricing] = {
+DEFAULT_PRICING: dict[str, ModelPricing] = {
     "gpt-4o": ModelPricing(
-        model="gpt-4o", prompt_cost_per_1k=0.0025, completion_cost_per_1k=0.010, cached_cost_per_1k=0.00125
+        model="gpt-4o",
+        prompt_cost_per_1k=0.0025,
+        completion_cost_per_1k=0.010,
+        cached_cost_per_1k=0.00125,
     ),
     "gpt-4o-mini": ModelPricing(
-        model="gpt-4o-mini", prompt_cost_per_1k=0.00015, completion_cost_per_1k=0.0006, cached_cost_per_1k=0.000075
+        model="gpt-4o-mini",
+        prompt_cost_per_1k=0.00015,
+        completion_cost_per_1k=0.0006,
+        cached_cost_per_1k=0.000075,
     ),
     "claude-sonnet-4-6": ModelPricing(
-        model="claude-sonnet-4-6", prompt_cost_per_1k=0.003, completion_cost_per_1k=0.015, cached_cost_per_1k=0.0003
+        model="claude-sonnet-4-6",
+        prompt_cost_per_1k=0.003,
+        completion_cost_per_1k=0.015,
+        cached_cost_per_1k=0.0003,
     ),
     "claude-haiku-4-5-20251001": ModelPricing(
-        model="claude-haiku-4-5-20251001", prompt_cost_per_1k=0.0008, completion_cost_per_1k=0.004, cached_cost_per_1k=0.00008
+        model="claude-haiku-4-5-20251001",
+        prompt_cost_per_1k=0.0008,
+        completion_cost_per_1k=0.004,
+        cached_cost_per_1k=0.00008,
     ),
     "claude-opus-4-6": ModelPricing(
-        model="claude-opus-4-6", prompt_cost_per_1k=0.015, completion_cost_per_1k=0.075, cached_cost_per_1k=0.0015
+        model="claude-opus-4-6",
+        prompt_cost_per_1k=0.015,
+        completion_cost_per_1k=0.075,
+        cached_cost_per_1k=0.0015,
     ),
 }
 
@@ -54,7 +68,7 @@ class CostGovernor:
         self,
         config: BudgetConfig,
         agent_id: str = "",
-        pricing: Optional[Dict[str, ModelPricing]] = None,
+        pricing: dict[str, ModelPricing] | None = None,
     ) -> None:
         self._config = config
         self._agent_id = agent_id
@@ -113,15 +127,13 @@ class CostGovernor:
             return 0.0
         return self._spent_usd / self._config.budget_usd
 
-    def report(self) -> Dict[str, Any]:
+    def report(self) -> dict[str, Any]:
         return {
             "spent_usd": round(self._spent_usd, 6),
             "budget_usd": self._config.budget_usd,
             "pct_used": round(self.pct_used(), 4),
             "calls": self._calls,
-            "remaining_usd": round(
-                max(0, self._config.budget_usd - self._spent_usd), 6
-            ),
+            "remaining_usd": round(max(0, self._config.budget_usd - self._spent_usd), 6),
         }
 
     # ------------------------------------------------------------------
@@ -170,6 +182,7 @@ class CostGovernor:
     def _tiktoken_estimate(self, response: Any, model: str) -> TokenUsage:
         try:
             import tiktoken
+
             safe_model = model if "gpt" in model else "gpt-4"
             enc = tiktoken.encoding_for_model(safe_model)
             content = ""

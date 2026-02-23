@@ -34,12 +34,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Optional
 
-from helix.core.agent import Agent, AgentResult
-from helix.core.tool import tool, ToolRegistry, registry
-from helix.core.workflow import Workflow, step
-from helix.core.team import Team
-from helix.core.session import Session
-
 from helix.config import (
     AgentConfig,
     AgentMode,
@@ -62,20 +56,23 @@ from helix.config import (
     WorkflowMode,
 )
 
+# ── Auto-load keys from ~/.helix/config.json and .env on import ─────────────
+from helix.config_store import apply_saved_config as _apply_saved_config
 from helix.context import ExecutionContext
-
+from helix.core.agent import Agent, AgentResult
+from helix.core.session import Session
+from helix.core.team import Team
+from helix.core.tool import ToolRegistry, registry, tool
+from helix.core.workflow import Workflow, step
 from helix.errors import (
     BudgetExceededError,
     HelixError,
     LoopDetectedError,
     ToolError,
-    ToolTimeoutError,
     ToolPermissionError,
+    ToolTimeoutError,
 )
 
-
-# ── Auto-load keys from ~/.helix/config.json and .env on import ─────────────
-from helix.config_store import apply_saved_config as _apply_saved_config
 _apply_saved_config()
 
 
@@ -115,6 +112,7 @@ def run(
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
                     asyncio.run,
@@ -124,9 +122,7 @@ def run(
         coro = agent.run(task, session_id=session_id, output_schema=output_schema)
         return loop.run_until_complete(coro)
     except RuntimeError:
-        return asyncio.run(
-            agent.run(task, session_id=session_id, output_schema=output_schema)
-        )
+        return asyncio.run(agent.run(task, session_id=session_id, output_schema=output_schema))
 
 
 async def run_async(
@@ -160,50 +156,89 @@ def create_agent(name: str, role: str, goal: str, **kwargs: Any) -> Agent:
 def wrap_llm(llm_client: Any, budget_usd: float = 10.0, **kwargs: Any) -> Any:
     """Wrap any LangChain/CrewAI/AutoGen LLM client with Helix cost governance."""
     from helix.adapters.universal import wrap_llm as _wrap_llm
+
     return _wrap_llm(llm_client, budget_usd=budget_usd, **kwargs)
 
 
 def from_crewai(crew: Any, budget_usd: float, **kwargs: Any) -> Any:
     """Run a CrewAI crew under Helix governance."""
     from helix.adapters.universal import from_crewai as _from_crewai
+
     return _from_crewai(crew, budget_usd=budget_usd, **kwargs)
 
 
 def from_langchain(chain: Any, budget_usd: float, **kwargs: Any) -> Any:
     """Run a LangChain chain under Helix governance."""
     from helix.adapters.universal import from_langchain as _from_langchain
+
     return _from_langchain(chain, budget_usd=budget_usd, **kwargs)
 
 
 def from_autogen(agent_obj: Any, budget_usd: float, **kwargs: Any) -> Any:
     """Run an AutoGen agent under Helix governance."""
     from helix.adapters.universal import from_autogen as _from_autogen
+
     return _from_autogen(agent_obj, budget_usd=budget_usd, **kwargs)
 
 
 def eval_suite(name: str, **kwargs: Any) -> Any:
     """Create an EvalSuite."""
     from helix.eval.suite import EvalSuite
+
     return EvalSuite(name=name, **kwargs)
 
 
 try:
-    from importlib.metadata import PackageNotFoundError as _PNFE, version as _pkg_version
+    from importlib.metadata import PackageNotFoundError as _PNFE
+    from importlib.metadata import version as _pkg_version
+
     __version__: str = _pkg_version("helix-agent")
 except _PNFE:  # editable / source install without metadata
     __version__ = "0.3.0"
 
 __all__ = [
-    "run", "run_async", "create_agent",
-    "wrap_llm", "from_crewai", "from_langchain", "from_autogen", "eval_suite",
-    "Agent", "AgentResult", "Workflow", "Team", "Session", "step", "tool",
-    "ToolRegistry", "registry", "ExecutionContext",
-    "AgentConfig", "AgentMode", "BudgetConfig", "BudgetStrategy",
-    "CacheConfig", "EvalCase", "HITLConfig", "MemoryConfig", "ModelConfig",
-    "ObservabilityConfig", "PermissionConfig", "RuntimeConfig", "SessionConfig",
-    "StructuredOutputConfig", "TeamConfig", "WorkflowConfig", "WorkflowMode",
-    "EpisodeOutcome", "FailureClass",
-    "HelixError", "BudgetExceededError", "LoopDetectedError",
-    "ToolError", "ToolTimeoutError", "ToolPermissionError",
+    "run",
+    "run_async",
+    "create_agent",
+    "wrap_llm",
+    "from_crewai",
+    "from_langchain",
+    "from_autogen",
+    "eval_suite",
+    "Agent",
+    "AgentResult",
+    "Workflow",
+    "Team",
+    "Session",
+    "step",
+    "tool",
+    "ToolRegistry",
+    "registry",
+    "ExecutionContext",
+    "AgentConfig",
+    "AgentMode",
+    "BudgetConfig",
+    "BudgetStrategy",
+    "CacheConfig",
+    "EvalCase",
+    "HITLConfig",
+    "MemoryConfig",
+    "ModelConfig",
+    "ObservabilityConfig",
+    "PermissionConfig",
+    "RuntimeConfig",
+    "SessionConfig",
+    "StructuredOutputConfig",
+    "TeamConfig",
+    "WorkflowConfig",
+    "WorkflowMode",
+    "EpisodeOutcome",
+    "FailureClass",
+    "HelixError",
+    "BudgetExceededError",
+    "LoopDetectedError",
+    "ToolError",
+    "ToolTimeoutError",
+    "ToolPermissionError",
     "__version__",
 ]

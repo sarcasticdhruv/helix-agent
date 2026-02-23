@@ -12,7 +12,8 @@ Env var:  OLLAMA_HOST (default: http://localhost:11434)
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from helix.config import ModelResponse, TokenUsage, ToolCallRecord
 from helix.errors import HelixProviderError
@@ -28,20 +29,21 @@ class OllamaProvider(LLMProvider):
     Pull a model: `ollama pull llama3.2`
     """
 
-    def __init__(self, host: Optional[str] = None) -> None:
+    def __init__(self, host: str | None = None) -> None:
         self._host = host or os.environ.get("OLLAMA_HOST", _DEFAULT_HOST)
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str = "llama3.2",
-        tools: Optional[List[Dict]] = None,
+        tools: list[dict] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs,
     ) -> ModelResponse:
         try:
             import httpx
+
             payload = {
                 "model": model,
                 "messages": messages,
@@ -58,11 +60,16 @@ class OllamaProvider(LLMProvider):
             return self._normalize(data, model)
         except Exception as e:
             retryable = "timeout" in str(e).lower() or "connect" in str(e).lower()
-            raise HelixProviderError(model=model, provider="ollama", original=e, retryable=retryable)
+            raise HelixProviderError(
+                model=model, provider="ollama", original=e, retryable=retryable
+            )
 
     async def stream(self, messages, model="llama3.2", **kwargs) -> AsyncIterator[str]:
         try:
-            import httpx, json as _json
+            import json as _json
+
+            import httpx
+
             payload = {"model": model, "messages": messages, "stream": True}
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream("POST", f"{self._host}/api/chat", json=payload) as resp:
@@ -79,14 +86,15 @@ class OllamaProvider(LLMProvider):
         except Exception as e:
             raise HelixProviderError(model=model, provider="ollama", original=e)
 
-    async def count_tokens(self, messages: List[Dict], model: str) -> int:
+    async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))
         return len(text) // 4
 
-    async def list_local_models(self) -> List[str]:
+    async def list_local_models(self) -> list[str]:
         """Return models currently pulled in Ollama."""
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(f"{self._host}/api/tags")
                 data = resp.json()
@@ -94,28 +102,41 @@ class OllamaProvider(LLMProvider):
         except Exception:
             return []
 
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         return [
-            "llama3.2", "llama3.2:1b", "llama3.1", "llama3.1:8b", "llama3.1:70b",
-            "mistral", "mistral-nemo", "mixtral",
-            "qwen2.5", "qwen2.5-coder",
-            "gemma2", "gemma2:2b",
-            "phi3", "phi3.5",
-            "deepseek-r1", "deepseek-coder-v2",
-            "codellama", "starcoder2",
+            "llama3.2",
+            "llama3.2:1b",
+            "llama3.1",
+            "llama3.1:8b",
+            "llama3.1:70b",
+            "mistral",
+            "mistral-nemo",
+            "mixtral",
+            "qwen2.5",
+            "qwen2.5-coder",
+            "gemma2",
+            "gemma2:2b",
+            "phi3",
+            "phi3.5",
+            "deepseek-r1",
+            "deepseek-coder-v2",
+            "codellama",
+            "starcoder2",
         ]
 
     async def health(self) -> bool:
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"{self._host}/api/tags")
                 return resp.status_code == 200
         except Exception:
             return False
 
-    def _normalize(self, data: Dict, model: str) -> ModelResponse:
+    def _normalize(self, data: dict, model: str) -> ModelResponse:
         import json as _json
+
         msg = data.get("message", {})
         content = msg.get("content", "")
         tool_calls = []
@@ -130,14 +151,20 @@ class OllamaProvider(LLMProvider):
                     args = _json.loads(args)
                 except Exception:
                     args = {}
-            tool_calls.append(ToolCallRecord(
-                id="", tool_name=fn.get("name", ""), arguments=args, step=0
-            ))
+            tool_calls.append(
+                ToolCallRecord(id="", tool_name=fn.get("name", ""), arguments=args, step=0)
+            )
 
         usage = TokenUsage(
             prompt_tokens=data.get("prompt_eval_count", 0),
             completion_tokens=data.get("eval_count", 0),
         )
         finish = "tool_calls" if tool_calls else "stop"
-        return ModelResponse(content=content, tool_calls=tool_calls, usage=usage,
-                             model=model, provider="ollama", finish_reason=finish)
+        return ModelResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=model,
+            provider="ollama",
+            finish_reason=finish,
+        )

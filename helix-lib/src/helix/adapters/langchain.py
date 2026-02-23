@@ -54,8 +54,11 @@ class LangGraphWrapper:
 
     async def run(self, input: object) -> object:
         import asyncio
+
         try:
-            invoke_fn = getattr(self._graph, "ainvoke", None) or getattr(self._graph, "invoke", None)
+            invoke_fn = getattr(self._graph, "ainvoke", None) or getattr(
+                self._graph, "invoke", None
+            )
             if invoke_fn is None:
                 raise AttributeError("Graph has no invoke method")
             if asyncio.iscoroutinefunction(invoke_fn):
@@ -64,6 +67,7 @@ class LangGraphWrapper:
             return await loop.run_in_executor(None, lambda: invoke_fn(input))
         except Exception as e:
             from helix.errors import AdapterError
+
             raise AdapterError(framework="langgraph", reason=str(e)) from e
 
     @property

@@ -15,8 +15,9 @@ import contextlib
 import json
 import time
 import uuid
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any
 
 from helix.context import ExecutionContext
 
@@ -24,27 +25,27 @@ from helix.context import ExecutionContext
 class Span:
     """A single unit of traced work."""
 
-    def __init__(self, name: str, parent_id: Optional[str] = None, **meta: Any) -> None:
+    def __init__(self, name: str, parent_id: str | None = None, **meta: Any) -> None:
         self.id = str(uuid.uuid4())[:8]
         self.name = name
         self.parent_id = parent_id
-        self.meta: Dict[str, Any] = dict(meta)
+        self.meta: dict[str, Any] = dict(meta)
         self.start_time = time.monotonic()
-        self.end_time: Optional[float] = None
-        self.error: Optional[str] = None
+        self.end_time: float | None = None
+        self.error: str | None = None
 
-    def finish(self, error: Optional[str] = None) -> None:
+    def finish(self, error: str | None = None) -> None:
         self.end_time = time.monotonic()
         if error:
             self.error = error
 
     @property
-    def duration_ms(self) -> Optional[float]:
+    def duration_ms(self) -> float | None:
         if self.end_time is None:
             return None
         return (self.end_time - self.start_time) * 1000
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -64,8 +65,8 @@ class Tracer:
         self._run_id = run_id
         self._agent_id = agent_id
         self._agent_name = agent_name
-        self._spans: List[Span] = []
-        self._active_span: Optional[Span] = None
+        self._spans: list[Span] = []
+        self._active_span: Span | None = None
         self._start_time = time.time()
 
     @contextlib.contextmanager
@@ -90,14 +91,16 @@ class Tracer:
             self._active_span = prev
 
     def log_step(self, step: int, response_content: str, model: str) -> None:
-        self._spans.append(Span(
-            name=f"step.{step}",
-            model=model,
-            content_preview=response_content[:100],
-        ))
+        self._spans.append(
+            Span(
+                name=f"step.{step}",
+                model=model,
+                content_preview=response_content[:100],
+            )
+        )
         self._spans[-1].finish()
 
-    def log_llm_call(self, model: str, tokens: Dict, cost_usd: float) -> None:
+    def log_llm_call(self, model: str, tokens: dict, cost_usd: float) -> None:
         s = Span("llm.call", model=model, tokens=tokens, cost_usd=cost_usd)
         s.finish()
         self._spans.append(s)
@@ -117,7 +120,7 @@ class Tracer:
         except Exception:
             pass
 
-    def export(self) -> Dict[str, Any]:
+    def export(self) -> dict[str, Any]:
         return {
             "run_id": self._run_id,
             "agent_id": self._agent_id,

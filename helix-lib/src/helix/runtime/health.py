@@ -5,7 +5,7 @@ helix/runtime/health.py  —  powers `helix doctor`
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 # ── Provider registry ─────────────────────────────────────────────────────────
 # (name, import_name, pip_install_name, env_vars, description)
@@ -13,29 +13,41 @@ from typing import Any, Dict, List, Tuple
 # env_vars: empty list = no key needed (Ollama)
 # env_vars: multiple entries = ANY one of them satisfies the check
 
-_PROVIDERS: List[Tuple[str, str, str, List[str], str]] = [
-    ("openai",     "openai",             "openai",             ["OPENAI_API_KEY"],                           "GPT-4o, GPT-4o-mini, o1, o3-mini"),
-    ("anthropic",  "anthropic",          "anthropic",          ["ANTHROPIC_API_KEY"],                        "Claude Opus / Sonnet / Haiku"),
-    ("gemini",     "google.generativeai","google-generativeai",["GOOGLE_API_KEY", "GEMINI_API_KEY"],         "Gemini 2.0 Flash, 1.5 Pro"),
-    ("groq",       "groq",               "groq",               ["GROQ_API_KEY"],                             "Llama, Mixtral, Gemma (ultra-fast)"),
-    ("mistral",    "mistralai",          "mistralai",          ["MISTRAL_API_KEY"],                          "Mistral Large / Small / Codestral"),
-    ("cohere",     "cohere",             "cohere",             ["COHERE_API_KEY"],                           "Command R+, Command R"),
-    ("together",   "together",           "together",           ["TOGETHER_API_KEY"],                         "200+ open models via Together AI"),
-    ("ollama",     "httpx",              "httpx",              [],                                           "Local models — no key needed"),
-    ("azure",      "openai",             "openai",             ["AZURE_OPENAI_API_KEY"],                     "Azure OpenAI (needs AZURE_OPENAI_ENDPOINT too)"),
-    ("openrouter", "openai",             "openai",             ["OPENROUTER_API_KEY"],                       "100+ models via OpenRouter"),
-    ("deepseek",   "openai",             "openai",             ["DEEPSEEK_API_KEY"],                         "DeepSeek Chat / Reasoner"),
-    ("xai",        "openai",             "openai",             ["XAI_API_KEY"],                              "xAI Grok"),
-    ("perplexity", "openai",             "openai",             ["PERPLEXITY_API_KEY"],                       "Perplexity Sonar (online search)"),
-    ("fireworks",  "openai",             "openai",             ["FIREWORKS_API_KEY"],                        "Fireworks AI (fast open models)"),
+_PROVIDERS: list[tuple[str, str, str, list[str], str]] = [
+    ("openai", "openai", "openai", ["OPENAI_API_KEY"], "GPT-4o, GPT-4o-mini, o1, o3-mini"),
+    ("anthropic", "anthropic", "anthropic", ["ANTHROPIC_API_KEY"], "Claude Opus / Sonnet / Haiku"),
+    (
+        "gemini",
+        "google.generativeai",
+        "google-generativeai",
+        ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+        "Gemini 2.0 Flash, 1.5 Pro",
+    ),
+    ("groq", "groq", "groq", ["GROQ_API_KEY"], "Llama, Mixtral, Gemma (ultra-fast)"),
+    ("mistral", "mistralai", "mistralai", ["MISTRAL_API_KEY"], "Mistral Large / Small / Codestral"),
+    ("cohere", "cohere", "cohere", ["COHERE_API_KEY"], "Command R+, Command R"),
+    ("together", "together", "together", ["TOGETHER_API_KEY"], "200+ open models via Together AI"),
+    ("ollama", "httpx", "httpx", [], "Local models — no key needed"),
+    (
+        "azure",
+        "openai",
+        "openai",
+        ["AZURE_OPENAI_API_KEY"],
+        "Azure OpenAI (needs AZURE_OPENAI_ENDPOINT too)",
+    ),
+    ("openrouter", "openai", "openai", ["OPENROUTER_API_KEY"], "100+ models via OpenRouter"),
+    ("deepseek", "openai", "openai", ["DEEPSEEK_API_KEY"], "DeepSeek Chat / Reasoner"),
+    ("xai", "openai", "openai", ["XAI_API_KEY"], "xAI Grok"),
+    ("perplexity", "openai", "openai", ["PERPLEXITY_API_KEY"], "Perplexity Sonar (online search)"),
+    ("fireworks", "openai", "openai", ["FIREWORKS_API_KEY"], "Fireworks AI (fast open models)"),
 ]
 
 _OTHER_PACKAGES = [
-    ("tiktoken",          "tiktoken",          "accurate token counting"),
-    ("httpx",             "httpx",             "fetch_url tool + Ollama + WebhookTransport"),
+    ("tiktoken", "tiktoken", "accurate token counting"),
+    ("httpx", "httpx", "fetch_url tool + Ollama + WebhookTransport"),
     ("duckduckgo_search", "duckduckgo-search", "web_search built-in tool"),
-    ("redis",             "redis",             "Redis cache/session backend, QueueTransport"),
-    ("pydantic",          "pydantic>=2.0",     "core — required"),
+    ("redis", "redis", "Redis cache/session backend, QueueTransport"),
+    ("pydantic", "pydantic>=2.0", "core — required"),
 ]
 
 
@@ -47,27 +59,29 @@ def _pkg_installed(import_name: str) -> bool:
     """
     try:
         import importlib
+
         importlib.import_module(import_name)
         return True
     except ImportError:
         return False
 
 
-def _any_key_set(env_vars: List[str]) -> bool:
+def _any_key_set(env_vars: list[str]) -> bool:
     return any(bool(os.environ.get(v, "").strip()) for v in env_vars)
 
 
-def _key_set_names(env_vars: List[str]) -> List[str]:
+def _key_set_names(env_vars: list[str]) -> list[str]:
     return [v for v in env_vars if os.environ.get(v, "").strip()]
 
 
-def _key_missing_names(env_vars: List[str]) -> List[str]:
+def _key_missing_names(env_vars: list[str]) -> list[str]:
     return [v for v in env_vars if not os.environ.get(v, "").strip()]
 
 
 def _ollama_running() -> bool:
     try:
         import socket
+
         s = socket.create_connection(("localhost", 11434), timeout=1.0)
         s.close()
         return True
@@ -75,16 +89,15 @@ def _ollama_running() -> bool:
         return False
 
 
-async def environment_doctor() -> Dict[str, Any]:
-    results: Dict[str, Any] = {}
-    errors: List[str] = []
-    warnings: List[str] = []
+async def environment_doctor() -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    errors: list[str] = []
+    warnings: list[str] = []
 
-    provider_results: Dict[str, Any] = {}
+    provider_results: dict[str, Any] = {}
     available_count = 0
 
     for name, import_name, pip_name, env_vars, description in _PROVIDERS:
-
         # ── Ollama: special-case (local server, no key) ──────────────────────
         if name == "ollama":
             running = _ollama_running()
@@ -98,8 +111,8 @@ async def environment_doctor() -> Dict[str, Any]:
             continue
 
         # ── All other providers: check key AND package independently ─────────
-        pkg_ok  = _pkg_installed(import_name)
-        key_ok  = _any_key_set(env_vars) if env_vars else True
+        pkg_ok = _pkg_installed(import_name)
+        key_ok = _any_key_set(env_vars) if env_vars else True
         set_keys = _key_set_names(env_vars)
         miss_keys = _key_missing_names(env_vars)
 
@@ -121,7 +134,9 @@ async def environment_doctor() -> Dict[str, Any]:
                 "fix": f"pip install {pip_name}",
                 "set_keys": set_keys,
             }
-            warnings.append(f"{name}: pip install {pip_name}  (key already set: {', '.join(set_keys)})")
+            warnings.append(
+                f"{name}: pip install {pip_name}  (key already set: {', '.join(set_keys)})"
+            )
 
         elif not key_ok and pkg_ok:
             # SDK installed but no key
@@ -153,17 +168,20 @@ async def environment_doctor() -> Dict[str, Any]:
         )
 
     # ── Other packages ────────────────────────────────────────────────────────
-    pkg_results: Dict[str, Any] = {}
+    pkg_results: dict[str, Any] = {}
     for import_name, pip_name, desc in _OTHER_PACKAGES:
         try:
             import importlib
+
             mod = importlib.import_module(import_name)
             version = getattr(mod, "__version__", "installed")
             pkg_results[import_name] = {"status": "ok", "version": version}
         except ImportError:
             level = "required" if import_name == "pydantic" else "optional"
             pkg_results[import_name] = {
-                "status": "missing", "fix": f"pip install {pip_name}", "used_for": desc
+                "status": "missing",
+                "fix": f"pip install {pip_name}",
+                "used_for": desc,
             }
             if level == "required":
                 errors.append(f"Required package missing: {pip_name}")
@@ -173,7 +191,7 @@ async def environment_doctor() -> Dict[str, Any]:
 
     # ── Local directories ─────────────────────────────────────────────────────
     dirs = [".helix/traces", ".helix/audit", ".helix/wal", ".helix/eval_results"]
-    dir_results: Dict[str, str] = {}
+    dir_results: dict[str, str] = {}
     for d in dirs:
         try:
             os.makedirs(d, exist_ok=True)
@@ -189,7 +207,7 @@ async def environment_doctor() -> Dict[str, Any]:
     return results
 
 
-async def health_check(rt: Any) -> Dict[str, Any]:
+async def health_check(rt: Any) -> dict[str, Any]:
     return {
         "runtime": {
             "status": "healthy" if rt._running else "stopped",

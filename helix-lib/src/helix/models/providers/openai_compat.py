@@ -34,24 +34,24 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from helix.config import ModelResponse, TokenUsage, ToolCallRecord
 from helix.errors import HelixProviderError
 from helix.interfaces import LLMProvider
 
-
 # Well-known OpenAI-compatible endpoints
-KNOWN_ENDPOINTS: Dict[str, Dict[str, str]] = {
-    "openrouter":   {"base_url": "https://openrouter.ai/api/v1",             "env": "OPENROUTER_API_KEY"},
-    "perplexity":   {"base_url": "https://api.perplexity.ai",                "env": "PERPLEXITY_API_KEY"},
-    "fireworks":    {"base_url": "https://api.fireworks.ai/inference/v1",    "env": "FIREWORKS_API_KEY"},
-    "deepseek":     {"base_url": "https://api.deepseek.com/v1",              "env": "DEEPSEEK_API_KEY"},
-    "xai":          {"base_url": "https://api.x.ai/v1",                      "env": "XAI_API_KEY"},
-    "moonshot":     {"base_url": "https://api.moonshot.cn/v1",               "env": "MOONSHOT_API_KEY"},
-    "lmstudio":     {"base_url": "http://localhost:1234/v1",                 "env": ""},
-    "vllm":         {"base_url": "http://localhost:8000/v1",                 "env": ""},
-    "localai":      {"base_url": "http://localhost:8080/v1",                 "env": ""},
+KNOWN_ENDPOINTS: dict[str, dict[str, str]] = {
+    "openrouter": {"base_url": "https://openrouter.ai/api/v1", "env": "OPENROUTER_API_KEY"},
+    "perplexity": {"base_url": "https://api.perplexity.ai", "env": "PERPLEXITY_API_KEY"},
+    "fireworks": {"base_url": "https://api.fireworks.ai/inference/v1", "env": "FIREWORKS_API_KEY"},
+    "deepseek": {"base_url": "https://api.deepseek.com/v1", "env": "DEEPSEEK_API_KEY"},
+    "xai": {"base_url": "https://api.x.ai/v1", "env": "XAI_API_KEY"},
+    "moonshot": {"base_url": "https://api.moonshot.cn/v1", "env": "MOONSHOT_API_KEY"},
+    "lmstudio": {"base_url": "http://localhost:1234/v1", "env": ""},
+    "vllm": {"base_url": "http://localhost:8000/v1", "env": ""},
+    "localai": {"base_url": "http://localhost:8080/v1", "env": ""},
 }
 
 
@@ -80,9 +80,9 @@ class OpenAICompatProvider(LLMProvider):
     def __init__(
         self,
         base_url: str,
-        api_key: Optional[str] = None,
-        default_model: Optional[str] = None,
-        extra_headers: Optional[Dict[str, str]] = None,
+        api_key: str | None = None,
+        default_model: str | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key or os.environ.get("OPENAI_COMPAT_API_KEY", "none")
@@ -91,7 +91,7 @@ class OpenAICompatProvider(LLMProvider):
         self._client = None
 
     @classmethod
-    def from_preset(cls, name: str, api_key: Optional[str] = None) -> "OpenAICompatProvider":
+    def from_preset(cls, name: str, api_key: str | None = None) -> OpenAICompatProvider:
         """
         Create a provider from a well-known preset name.
 
@@ -108,6 +108,7 @@ class OpenAICompatProvider(LLMProvider):
         if self._client is None:
             try:
                 from openai import AsyncOpenAI
+
                 self._client = AsyncOpenAI(
                     api_key=self._api_key,
                     base_url=self._base_url,
@@ -119,18 +120,20 @@ class OpenAICompatProvider(LLMProvider):
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
-        model: Optional[str] = None,
-        tools: Optional[List[Dict]] = None,
+        messages: list[dict[str, Any]],
+        model: str | None = None,
+        tools: list[dict] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict] = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> ModelResponse:
         target = model or self._default_model
         try:
             client = self._get_client()
-            kwargs_ = dict(model=target, messages=messages, temperature=temperature, max_tokens=max_tokens)
+            kwargs_ = dict(
+                model=target, messages=messages, temperature=temperature, max_tokens=max_tokens
+            )
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
             if response_format:
@@ -138,8 +141,12 @@ class OpenAICompatProvider(LLMProvider):
             response = await client.chat.completions.create(**kwargs_)
             return self._normalize(response, target)
         except Exception as e:
-            retryable = any(k in str(e).lower() for k in ("rate", "timeout", "503", "529", "overload"))
-            raise HelixProviderError(model=target, provider=self._base_url, original=e, retryable=retryable)
+            retryable = any(
+                k in str(e).lower() for k in ("rate", "timeout", "503", "529", "overload")
+            )
+            raise HelixProviderError(
+                model=target, provider=self._base_url, original=e, retryable=retryable
+            )
 
     async def stream(self, messages, model=None, **kwargs) -> AsyncIterator[str]:
         target = model or self._default_model
@@ -152,16 +159,17 @@ class OpenAICompatProvider(LLMProvider):
         except Exception as e:
             raise HelixProviderError(model=target, provider=self._base_url, original=e)
 
-    async def count_tokens(self, messages: List[Dict], model: str) -> int:
+    async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = " ".join(m.get("content", "") for m in messages if isinstance(m.get("content"), str))
         return len(text) // 4
 
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         return [self._default_model]
 
     async def health(self) -> bool:
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(
                     f"{self._base_url}/models",
@@ -182,16 +190,24 @@ class OpenAICompatProvider(LLMProvider):
                     args = json.loads(tc.function.arguments)
                 except Exception:
                     args = {}
-                tool_calls.append(ToolCallRecord(
-                    id=getattr(tc, "id", ""),
-                    tool_name=tc.function.name,
-                    arguments=args,
-                    step=0,
-                ))
+                tool_calls.append(
+                    ToolCallRecord(
+                        id=getattr(tc, "id", ""),
+                        tool_name=tc.function.name,
+                        arguments=args,
+                        step=0,
+                    )
+                )
         usage = TokenUsage(
             prompt_tokens=raw.usage.prompt_tokens if raw.usage else 0,
             completion_tokens=raw.usage.completion_tokens if raw.usage else 0,
         )
         finish = "tool_calls" if tool_calls else choice.finish_reason or "stop"
-        return ModelResponse(content=content, tool_calls=tool_calls, usage=usage,
-                             model=model, provider=self._base_url, finish_reason=finish)
+        return ModelResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=model,
+            provider=self._base_url,
+            finish_reason=finish,
+        )

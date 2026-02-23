@@ -12,15 +12,15 @@ information while freeing token budget.
 from __future__ import annotations
 
 import math
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from helix.config import ContextMessage, ContextMessageRole
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -29,17 +29,17 @@ def _cosine_similarity(a: List[float], b: List[float]) -> float:
 
 
 def _cluster_by_similarity(
-    messages: List[ContextMessage],
-    embeddings: List[List[float]],
+    messages: list[ContextMessage],
+    embeddings: list[list[float]],
     threshold: float = 0.75,
-) -> List[List[int]]:
+) -> list[list[int]]:
     """
     Simple greedy clustering: each message joins the first cluster
     whose centroid is within threshold similarity.
     Returns list of index groups.
     """
-    clusters: List[List[int]] = []
-    centroids: List[List[float]] = []
+    clusters: list[list[int]] = []
+    centroids: list[list[float]] = []
 
     for i, emb in enumerate(embeddings):
         best_cluster = -1
@@ -60,8 +60,7 @@ def _cluster_by_similarity(
             cluster_embs = [embeddings[k] for k in clusters[best_cluster]]
             n = len(cluster_embs)
             centroids[best_cluster] = [
-                sum(cluster_embs[k][d] for k in range(n)) / n
-                for d in range(len(emb))
+                sum(cluster_embs[k][d] for k in range(n)) / n for d in range(len(emb))
             ]
 
     return clusters
@@ -86,10 +85,10 @@ class IntelligentCompactor:
 
     async def compact(
         self,
-        messages: List[ContextMessage],
-        embedder: Optional[Any] = None,
-        llm_router: Optional[Any] = None,
-    ) -> List[ContextMessage]:
+        messages: list[ContextMessage],
+        embedder: Any | None = None,
+        llm_router: Any | None = None,
+    ) -> list[ContextMessage]:
         """
         Compact the message list.
 
@@ -101,20 +100,16 @@ class IntelligentCompactor:
         """
         pinned = [m for m in messages if m.pinned]
         compressible = [
-            m for m in messages
-            if not m.pinned and m.relevance < self._relevance_threshold
+            m for m in messages if not m.pinned and m.relevance < self._relevance_threshold
         ]
-        recent = [
-            m for m in messages
-            if not m.pinned and m.relevance >= self._relevance_threshold
-        ]
+        recent = [m for m in messages if not m.pinned and m.relevance >= self._relevance_threshold]
 
         if len(compressible) <= 2:
             # Not enough to compact
             return messages
 
         # Get embeddings for clustering
-        summaries: List[ContextMessage] = []
+        summaries: list[ContextMessage] = []
         if embedder and len(compressible) > 1:
             try:
                 texts = [m.content[:500] for m in compressible]
@@ -134,16 +129,14 @@ class IntelligentCompactor:
 
     async def _summarize_group(
         self,
-        group: List[ContextMessage],
-        llm_router: Optional[Any],
+        group: list[ContextMessage],
+        llm_router: Any | None,
     ) -> ContextMessage:
         """Summarize a group of messages into one summary message."""
         if len(group) == 1:
             return group[0]
 
-        combined = "\n".join(
-            f"[{m.role.value}]: {m.content[:300]}" for m in group
-        )
+        combined = "\n".join(f"[{m.role.value}]: {m.content[:300]}" for m in group)
         summary_text = f"[SUMMARY of {len(group)} messages] {combined[:200]}..."
 
         if llm_router:
@@ -173,14 +166,16 @@ class IntelligentCompactor:
             relevance=0.6,
         )
 
-    def _truncate_fallback(self, messages: List[ContextMessage]) -> List[ContextMessage]:
+    def _truncate_fallback(self, messages: list[ContextMessage]) -> list[ContextMessage]:
         """When embedding/LLM unavailable: merge into a single summary."""
         if not messages:
             return []
         content = "; ".join(m.content[:100] for m in messages[:5])
-        return [ContextMessage(
-            role=ContextMessageRole.SYSTEM,
-            content=f"[COMPACTED: {len(messages)} messages] {content}",
-            pinned=False,
-            relevance=0.5,
-        )]
+        return [
+            ContextMessage(
+                role=ContextMessageRole.SYSTEM,
+                content=f"[COMPACTED: {len(messages)} messages] {content}",
+                pinned=False,
+                relevance=0.5,
+            )
+        ]

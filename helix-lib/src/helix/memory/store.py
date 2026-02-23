@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from helix.config import (
     Episode,
@@ -37,7 +36,7 @@ class ShortTermBuffer:
     """
 
     def __init__(self, limit: int) -> None:
-        self._entries: List[MemoryEntry] = []
+        self._entries: list[MemoryEntry] = []
         self._limit = limit
         self._lock = asyncio.Lock()
 
@@ -49,11 +48,11 @@ class ShortTermBuffer:
                 self._entries.sort(key=lambda e: e.importance, reverse=True)
                 self._entries = self._entries[: self._limit]
 
-    async def recent(self, n: int) -> List[MemoryEntry]:
+    async def recent(self, n: int) -> list[MemoryEntry]:
         async with self._lock:
             return list(reversed(self._entries[-n:]))
 
-    async def all(self) -> List[MemoryEntry]:
+    async def all(self) -> list[MemoryEntry]:
         async with self._lock:
             return list(self._entries)
 
@@ -77,10 +76,10 @@ class WriteAheadLog:
     def __init__(self, wal_path: Path) -> None:
         self._path = wal_path
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._pending: List[MemoryEntry] = self._load()
+        self._pending: list[MemoryEntry] = self._load()
         self._lock = asyncio.Lock()
 
-    def _load(self) -> List[MemoryEntry]:
+    def _load(self) -> list[MemoryEntry]:
         if not self._path.exists():
             return []
         try:
@@ -91,9 +90,7 @@ class WriteAheadLog:
 
     def _save(self) -> None:
         try:
-            self._path.write_text(
-                json.dumps([e.model_dump() for e in self._pending], default=str)
-            )
+            self._path.write_text(json.dumps([e.model_dump() for e in self._pending], default=str))
         except Exception:
             pass  # WAL save failure is not fatal; entry stays in-memory pending
 
@@ -107,7 +104,7 @@ class WriteAheadLog:
             self._pending = [e for e in self._pending if e.id != entry_id]
             self._save()
 
-    async def pending(self) -> List[MemoryEntry]:
+    async def pending(self) -> list[MemoryEntry]:
         async with self._lock:
             return list(self._pending)
 
@@ -128,14 +125,14 @@ class MemoryStore:
     def __init__(
         self,
         config: MemoryConfig,
-        backend: Optional[MemoryBackend] = None,
+        backend: MemoryBackend | None = None,
         wal_dir: str = ".helix/wal",
     ) -> None:
         self._config = config
         self._buffer = ShortTermBuffer(limit=config.short_term_limit)
-        self._backend: Optional[MemoryBackend] = backend
+        self._backend: MemoryBackend | None = backend
         self._wal = WriteAheadLog(Path(wal_dir) / "memory_wal.json")
-        self._embedder: Optional[Any] = None
+        self._embedder: Any | None = None
 
     async def initialize(self) -> None:
         """Set up backend and embedder. Flush any pending WAL entries."""
@@ -151,21 +148,26 @@ class MemoryStore:
         backend_name = self._config.backend
         if backend_name == "inmemory":
             from helix.memory.backends.inmemory import InMemoryBackend
+
             return InMemoryBackend()
         if backend_name == "qdrant":
             from helix.memory.backends.qdrant import QdrantBackend
+
             return QdrantBackend()
         if backend_name == "pinecone":
             from helix.memory.backends.pinecone import PineconeBackend
+
             return PineconeBackend()
         if backend_name == "chroma":
             from helix.memory.backends.chroma import ChromaBackend
+
             return ChromaBackend()
         raise ValueError(f"Unknown memory backend: {backend_name}")
 
     def _create_embedder(self) -> Any:
         """Return a lightweight embedder. Defaults to OpenAI embeddings."""
         from helix.models.embedder import OpenAIEmbedder
+
         return OpenAIEmbedder(model=self._config.embedding_model)
 
     # ------------------------------------------------------------------
@@ -179,14 +181,11 @@ class MemoryStore:
         also promote to long-term via WAL.
         """
         await self._buffer.add(entry)
-        if (
-            self._config.auto_promote
-            and entry.importance >= self._config.importance_threshold
-        ):
+        if self._config.auto_promote and entry.importance >= self._config.importance_threshold:
             await self._promote(entry)
         return entry
 
-    async def recent(self, n: int = 5) -> List[MemoryEntry]:
+    async def recent(self, n: int = 5) -> list[MemoryEntry]:
         return await self._buffer.recent(n)
 
     def recent_str(self, n: int = 5) -> str:
@@ -200,8 +199,8 @@ class MemoryStore:
         self,
         query: str,
         top_k: int = 5,
-        kind: Optional[MemoryKind] = None,
-    ) -> List[MemoryEntry]:
+        kind: MemoryKind | None = None,
+    ) -> list[MemoryEntry]:
         """Semantic search over long-term memory."""
         if self._backend is None or self._embedder is None:
             return []
@@ -223,7 +222,7 @@ class MemoryStore:
         if self._backend:
             await self._backend.delete(entry_id)
 
-    async def embed(self, text: str) -> List[float]:
+    async def embed(self, text: str) -> list[float]:
         """Expose embedder for external use (e.g. episode similarity)."""
         if self._embedder is None:
             return []
@@ -249,8 +248,8 @@ class MemoryStore:
         self,
         task: str,
         top_k: int = 3,
-        outcome: Optional[EpisodeOutcome] = None,
-    ) -> List[Episode]:
+        outcome: EpisodeOutcome | None = None,
+    ) -> list[Episode]:
         """Return episodes similar to the given task."""
         if self._backend is None or self._embedder is None:
             return []
@@ -286,7 +285,7 @@ class MemoryStore:
         if not success:
             raise MemoryConflictError(key=key, agent_id=agent_id)
 
-    async def recall_shared(self, query: str, top_k: int = 3) -> List[MemoryEntry]:
+    async def recall_shared(self, query: str, top_k: int = 3) -> list[MemoryEntry]:
         """Search shared team memory."""
         return await self.recall(query=query, top_k=top_k)
 

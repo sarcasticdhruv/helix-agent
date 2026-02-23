@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from helix.config import ModelResponse, TokenUsage
 from helix.errors import HelixProviderError
@@ -21,24 +22,20 @@ from helix.interfaces import LLMProvider
 
 
 class GeminiProvider(LLMProvider):
-
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         self._api_key = (
-            api_key
-            or os.environ.get("GOOGLE_API_KEY")
-            or os.environ.get("GEMINI_API_KEY")
+            api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
         )
 
     def _get_genai(self):
         try:
             import google.generativeai as genai
         except ImportError:
-            raise ImportError(
-                "pip install google-generativeai"
-            )
+            raise ImportError("pip install google-generativeai")
         if not self._api_key:
             raise HelixProviderError(
-                provider="google", model="gemini",
+                provider="google",
+                model="gemini",
                 reason="GOOGLE_API_KEY not set. Run: helix config set GOOGLE_API_KEY your-key",
                 retryable=False,
             )
@@ -47,9 +44,9 @@ class GeminiProvider(LLMProvider):
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str = "gemini-2.5-flash",
-        tools: Optional[List[Dict]] = None,
+        tools: list[dict] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
         **kwargs,
@@ -90,16 +87,12 @@ class GeminiProvider(LLMProvider):
                 # Multi-turn: use chat session
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
-                    None,
-                    lambda: self._chat_complete(client, history, prompt)
+                    None, lambda: self._chat_complete(client, history, prompt)
                 )
             else:
                 # Single turn: simplest path — just pass the string
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None,
-                    lambda: client.generate_content(prompt)
-                )
+                response = await loop.run_in_executor(None, lambda: client.generate_content(prompt))
 
             # Extract text
             content = self._extract_text(response)
@@ -123,13 +116,18 @@ class GeminiProvider(LLMProvider):
             raise
         except Exception as e:
             err_str = str(e).lower()
-            retryable = any(k in err_str for k in ("rate", "quota", "timeout", "503", "429", "resource exhausted"))
+            retryable = any(
+                k in err_str
+                for k in ("rate", "quota", "timeout", "503", "429", "resource exhausted")
+            )
             raise HelixProviderError(
-                model=model, provider="google",
-                original=e, retryable=retryable,
+                model=model,
+                provider="google",
+                original=e,
+                retryable=retryable,
             )
 
-    def _chat_complete(self, client, history: List[Dict], last_msg: str):
+    def _chat_complete(self, client, history: list[dict], last_msg: str):
         """Use ChatSession for multi-turn conversations."""
         chat = client.start_chat(history=history)
         return chat.send_message(last_msg)
@@ -154,28 +152,32 @@ class GeminiProvider(LLMProvider):
             pass
         return ""
 
-    def _extract_system(self, messages: List[Dict]) -> str:
+    def _extract_system(self, messages: list[dict]) -> str:
         """Extract system message text."""
         parts = []
         for msg in messages:
             if msg.get("role") == "system":
                 content = msg.get("content", "") or ""
                 if isinstance(content, list):
-                    content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+                    content = " ".join(
+                        c.get("text", "") if isinstance(c, dict) else str(c) for c in content
+                    )
                 parts.append(content)
         return "\n\n".join(parts)
 
-    def _build_prompt(self, messages: List[Dict]) -> str:
+    def _build_prompt(self, messages: list[dict]) -> str:
         """Build the final user turn as a plain string."""
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 content = msg.get("content", "") or ""
                 if isinstance(content, list):
-                    content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+                    content = " ".join(
+                        c.get("text", "") if isinstance(c, dict) else str(c) for c in content
+                    )
                 return content
         return "Hello"
 
-    def _build_history(self, messages: List[Dict]) -> List[Dict]:
+    def _build_history(self, messages: list[dict]) -> list[dict]:
         """
         Build chat history for multi-turn conversations.
         Returns list of {"role": "user"|"model", "parts": [{"text": "..."}]}
@@ -193,9 +195,11 @@ class GeminiProvider(LLMProvider):
             role = msg.get("role", "user")
             content = msg.get("content", "") or ""
             if isinstance(content, list):
-                content = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+                content = " ".join(
+                    c.get("text", "") if isinstance(c, dict) else str(c) for c in content
+                )
 
-            is_last = (i == len(non_system) - 1)
+            is_last = i == len(non_system) - 1
             if role == "user":
                 if is_last:
                     break  # final user turn handled outside
@@ -207,7 +211,7 @@ class GeminiProvider(LLMProvider):
 
     async def stream(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str = "gemini-2.5-flash",
         **kwargs,
     ) -> AsyncIterator[str]:
@@ -217,8 +221,7 @@ class GeminiProvider(LLMProvider):
             client = genai.GenerativeModel(model_name=model)
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
-                None,
-                lambda: client.generate_content(prompt, stream=True)
+                None, lambda: client.generate_content(prompt, stream=True)
             )
             for chunk in response:
                 text = self._extract_text(chunk)
@@ -229,18 +232,18 @@ class GeminiProvider(LLMProvider):
         except Exception as e:
             raise HelixProviderError(model=model, provider="google", original=e)
 
-    async def count_tokens(self, messages: List[Dict], model: str) -> int:
+    async def count_tokens(self, messages: list[dict], model: str) -> int:
         text = self._build_prompt(messages)
         return max(1, len(text) // 4)
 
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         return [
             "gemini-2.5-flash",
             "gemini-2.5-pro",
             "gemini-2.0-flash",
             "gemini-2.0-flash-lite",
             "gemini-1.5-flash",  # may be unavailable in some regions
-            "gemini-1.5-pro",   # may be unavailable in some regions
+            "gemini-1.5-pro",  # may be unavailable in some regions
         ]
 
     async def health(self) -> bool:

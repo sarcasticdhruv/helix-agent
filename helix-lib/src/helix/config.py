@@ -16,10 +16,9 @@ from __future__ import annotations
 import time
 import uuid
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -83,8 +82,8 @@ class WorkflowMode(str, Enum):
 
 
 class BudgetStrategy(str, Enum):
-    STOP = "stop"          # Hard stop when budget exceeded (default)
-    DEGRADE = "degrade"    # Switch to cheaper models as budget depletes
+    STOP = "stop"  # Hard stop when budget exceeded (default)
+    DEGRADE = "degrade"  # Switch to cheaper models as budget depletes
 
 
 class ComplexityTier(str, Enum):
@@ -127,10 +126,10 @@ class MemoryEntry(BaseModel):
     content: str
     kind: MemoryKind = MemoryKind.FACT
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
-    embedding: Optional[List[float]] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    embedding: list[float] | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: float = Field(default_factory=time.time)
-    agent_id: Optional[str] = None
+    agent_id: str | None = None
     version: int = 1  # For optimistic locking in shared memory
 
     model_config = ConfigDict(frozen=False)
@@ -145,14 +144,14 @@ class Episode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str
     task: str
-    task_embedding: Optional[List[float]] = None
+    task_embedding: list[float] | None = None
     outcome: EpisodeOutcome
     summary: str = ""
     steps: int = 0
     cost_usd: float = 0.0
-    tools_used: List[str] = Field(default_factory=list)
-    failure_reason: Optional[str] = None
-    learned_strategy: Optional[str] = None  # Post-mortem recommendation
+    tools_used: list[str] = Field(default_factory=list)
+    failure_reason: str | None = None
+    learned_strategy: str | None = None  # Post-mortem recommendation
     created_at: float = Field(default_factory=time.time)
 
     model_config = ConfigDict(frozen=True)
@@ -171,10 +170,10 @@ class ContextMessage(BaseModel):
     content: str
     step_added: int = 0
     relevance: float = 1.0
-    pinned: bool = False        # Pinned messages are never evicted
+    pinned: bool = False  # Pinned messages are never evicted
     reference_score: float = 0.0  # Boosted when cited in subsequent LLM response
-    tool_name: Optional[str] = None  # For role=tool messages
-    token_count: Optional[int] = None
+    tool_name: str | None = None  # For role=tool messages
+    token_count: int | None = None
 
     model_config = ConfigDict(frozen=False)
 
@@ -226,11 +225,11 @@ class ToolCallRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tool_name: str
-    arguments: Dict[str, Any]
-    result: Optional[Any] = None
-    failure_class: Optional[FailureClass] = None
+    arguments: dict[str, Any]
+    result: Any | None = None
+    failure_class: FailureClass | None = None
     retries: int = 0
-    duration_ms: Optional[float] = None
+    duration_ms: float | None = None
     step: int = 0
 
 
@@ -238,7 +237,7 @@ class ModelResponse(BaseModel):
     """Structured response from any LLMProvider."""
 
     content: str
-    tool_calls: List[ToolCallRecord] = Field(default_factory=list)
+    tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     usage: TokenUsage = Field(default_factory=TokenUsage)
     model: str
     provider: str
@@ -256,12 +255,12 @@ class CacheEntry(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     query: str
-    query_embedding: List[float]
+    query_embedding: list[float]
     context_hash: str
     response: str
     cost_usd: float
-    similarity: float = 1.0   # Populated on retrieval
-    age_s: float = 0.0        # Populated on retrieval
+    similarity: float = 1.0  # Populated on retrieval
+    age_s: float = 0.0  # Populated on retrieval
     created_at: float = Field(default_factory=time.time)
 
 
@@ -283,10 +282,10 @@ class PlanTemplate(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     task_description: str
-    task_embedding: Optional[List[float]] = None
-    keywords: List[str] = Field(default_factory=list)
+    task_embedding: list[float] | None = None
+    keywords: list[str] = Field(default_factory=list)
     steps_description: str  # Structured step sequence
-    tool_sequence: List[str] = Field(default_factory=list)
+    tool_sequence: list[str] = Field(default_factory=list)
     success_rate: float = 1.0
     run_count: int = 1
     avg_cost_usd: float = 0.0
@@ -306,10 +305,10 @@ class HITLRequest(BaseModel):
     agent_id: str
     prompt: str
     context_summary: str = ""
-    risk_level: str = "medium"   # low | medium | high | critical
+    risk_level: str = "medium"  # low | medium | high | critical
     timeout_seconds: float = 300.0
-    proposed_action: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    proposed_action: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: float = Field(default_factory=time.time)
 
 
@@ -318,9 +317,9 @@ class HITLResponse(BaseModel):
 
     request_id: str
     decision: HITLDecision
-    reviewer_id: Optional[str] = None
-    note: Optional[str] = None
-    modified_action: Optional[str] = None  # Used when decision=MODIFY
+    reviewer_id: str | None = None
+    note: str | None = None
+    modified_action: str | None = None  # Used when decision=MODIFY
     responded_at: float = Field(default_factory=time.time)
 
 
@@ -335,14 +334,14 @@ class AuditEntry(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     event_type: AuditEventType
     agent_id: str
-    session_id: Optional[str] = None
-    tenant_id: Optional[str] = None
-    details: Dict[str, Any] = Field(default_factory=dict)
+    session_id: str | None = None
+    tenant_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
     timestamp: float = Field(default_factory=time.time)
-    prev_hash: str = ""      # Hash of preceding entry
-    entry_hash: str = ""     # Hash of this entry's canonical content
+    prev_hash: str = ""  # Hash of preceding entry
+    entry_hash: str = ""  # Hash of this entry's canonical content
 
-    def verify(self, prev_entry: "AuditEntry") -> bool:
+    def verify(self, prev_entry: AuditEntry) -> bool:
         return self.prev_hash == prev_entry.entry_hash
 
     model_config = ConfigDict(frozen=True)
@@ -358,8 +357,8 @@ class GuardrailResult(BaseModel):
 
     passed: bool
     guardrail_name: str
-    modified_content: Optional[str] = None
-    reason: Optional[str] = None
+    modified_content: str | None = None
+    reason: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -372,9 +371,9 @@ class GuardrailResult(BaseModel):
 class ExpectedTrajectory(BaseModel):
     """Expected tool call sequence for trajectory evaluation."""
 
-    tool_sequence: List[str] = Field(default_factory=list)
-    max_steps: Optional[int] = None
-    must_not_call: List[str] = Field(default_factory=list)
+    tool_sequence: list[str] = Field(default_factory=list)
+    max_steps: int | None = None
+    must_not_call: list[str] = Field(default_factory=list)
 
 
 class EvalCase(BaseModel):
@@ -382,13 +381,13 @@ class EvalCase(BaseModel):
 
     name: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     input: str
-    expected_tools: List[str] = Field(default_factory=list)
-    expected_facts: List[str] = Field(default_factory=list)
-    expected_trajectory: Optional[ExpectedTrajectory] = None
+    expected_tools: list[str] = Field(default_factory=list)
+    expected_facts: list[str] = Field(default_factory=list)
+    expected_trajectory: ExpectedTrajectory | None = None
     max_steps: int = 10
     max_cost_usd: float = 1.0
     pass_threshold: float = 0.7
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(frozen=True)
 
@@ -400,12 +399,12 @@ class EvalCaseResult(BaseModel):
     input: str
     output: str
     passed: bool
-    scores: Dict[str, float]  # {scorer_name: score}
+    scores: dict[str, float]  # {scorer_name: score}
     overall: float
     cost_usd: float
     steps: int
     duration_s: float = 0.0
-    failure_reason: Optional[str] = None
+    failure_reason: str | None = None
 
     model_config = ConfigDict(frozen=True)
 
@@ -418,7 +417,7 @@ class EvalRunResult(BaseModel):
     timestamp: float = Field(default_factory=time.time)
     pass_count: int
     fail_count: int
-    results: List[EvalCaseResult]
+    results: list[EvalCaseResult]
     total_cost_usd: float
     duration_s: float = 0.0
 
@@ -428,7 +427,7 @@ class EvalRunResult(BaseModel):
         return self.pass_count / total if total > 0 else 0.0
 
     @property
-    def scores_by_case(self) -> Dict[str, float]:
+    def scores_by_case(self) -> dict[str, float]:
         return {r.case_name: r.overall for r in self.results}
 
     model_config = ConfigDict(frozen=True)
@@ -440,9 +439,9 @@ class EvalRunResult(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    backend: str = "inmemory"       # "inmemory" | "pinecone" | "qdrant" | "chroma"
-    short_term_limit: int = 20      # Max messages in rolling buffer
-    auto_promote: bool = True       # Promote important memories to long-term
+    backend: str = "inmemory"  # "inmemory" | "pinecone" | "qdrant" | "chroma"
+    short_term_limit: int = 20  # Max messages in rolling buffer
+    auto_promote: bool = True  # Promote important memories to long-term
     importance_threshold: float = 0.7
     embedding_model: str = "text-embedding-3-small"
 
@@ -452,7 +451,7 @@ class CacheConfig(BaseModel):
     semantic_threshold: float = 0.92
     ttl_seconds: int = 3600
     max_entries: int = 10_000
-    exclude_patterns: List[str] = Field(
+    exclude_patterns: list[str] = Field(
         default_factory=lambda: ["today", "now", "current", "latest", "price"]
     )
     plan_cache_enabled: bool = True
@@ -461,44 +460,44 @@ class CacheConfig(BaseModel):
 
 class HITLConfig(BaseModel):
     enabled: bool = False
-    on_confidence_below: Optional[float] = None   # e.g. 0.5
-    on_tool_risk: List[str] = Field(default_factory=list)  # tool names that require approval
-    on_cost_above_usd: Optional[float] = None
-    transport: str = "cli"          # "cli" | "webhook" | "queue"
-    transport_config: Dict[str, Any] = Field(default_factory=dict)
+    on_confidence_below: float | None = None  # e.g. 0.5
+    on_tool_risk: list[str] = Field(default_factory=list)  # tool names that require approval
+    on_cost_above_usd: float | None = None
+    transport: str = "cli"  # "cli" | "webhook" | "queue"
+    transport_config: dict[str, Any] = Field(default_factory=dict)
     timeout_seconds: float = 300.0
 
 
 class PermissionConfig(BaseModel):
-    allowed_tools: Optional[List[str]] = None   # None = all allowed
-    denied_tools: List[str] = Field(default_factory=list)
-    allowed_domains: Optional[List[str]] = None  # For web tools
+    allowed_tools: list[str] | None = None  # None = all allowed
+    denied_tools: list[str] = Field(default_factory=list)
+    allowed_domains: list[str] | None = None  # For web tools
     max_file_size_mb: float = 10.0
 
 
 class ObservabilityConfig(BaseModel):
     trace_enabled: bool = True
-    trace_backend: str = "local"    # "local" | "s3" | "otel"
-    trace_config: Dict[str, Any] = Field(default_factory=dict)
+    trace_backend: str = "local"  # "local" | "s3" | "otel"
+    trace_config: dict[str, Any] = Field(default_factory=dict)
     audit_enabled: bool = True
     audit_backend: str = "local"
-    audit_config: Dict[str, Any] = Field(default_factory=dict)
+    audit_config: dict[str, Any] = Field(default_factory=dict)
     metrics_enabled: bool = True
 
 
 class BudgetDegradationStep(BaseModel):
     """One step in a budget degradation strategy."""
 
-    at_pct: float           # e.g. 0.7 = when 70% of budget spent
-    action: str             # "switch_model" | "skip_optional" | "summarize_conclude"
-    switch_to_model: Optional[str] = None
+    at_pct: float  # e.g. 0.7 = when 70% of budget spent
+    action: str  # "switch_model" | "skip_optional" | "summarize_conclude"
+    switch_to_model: str | None = None
 
 
 class BudgetConfig(BaseModel):
     budget_usd: float
     warn_at_pct: float = 0.8
     strategy: BudgetStrategy = BudgetStrategy.STOP
-    degradation_steps: List[BudgetDegradationStep] = Field(default_factory=list)
+    degradation_steps: list[BudgetDegradationStep] = Field(default_factory=list)
 
     @field_validator("budget_usd")
     @classmethod
@@ -520,21 +519,23 @@ class StructuredOutputConfig(BaseModel):
     """Configuration for typed/structured output from agent runs."""
 
     enabled: bool = False
-    json_schema: Optional[Dict[str, Any]] = None   # JSON Schema (renamed from schema to avoid Pydantic v2 conflict)
-    pydantic_model: Optional[Any] = None       # Pydantic model class
+    json_schema: dict[str, Any] | None = (
+        None  # JSON Schema (renamed from schema to avoid Pydantic v2 conflict)
+    )
+    pydantic_model: Any | None = None  # Pydantic model class
     max_retries: int = 2
-    use_native: bool = True   # Use provider native structured output when available
+    use_native: bool = True  # Use provider native structured output when available
 
 
 class ModelConfig(BaseModel):
     """LLM selection and routing configuration."""
 
     primary: str = ""  # Empty = auto-detect from available keys at runtime
-    fallback_chain: List[str] = Field(default_factory=list)
+    fallback_chain: list[str] = Field(default_factory=list)
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, gt=0)
-    auto_route: bool = True        # Use complexity estimator to pick model
-    provider_overrides: Dict[str, Any] = Field(default_factory=dict)
+    auto_route: bool = True  # Use complexity estimator to pick model
+    provider_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -557,7 +558,7 @@ class AgentConfig(BaseModel):
     role: str
     goal: str
     agent_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: Optional[str] = None
+    tenant_id: str | None = None
 
     # Mode
     mode: AgentMode = AgentMode.EXPLORE
@@ -566,7 +567,7 @@ class AgentConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
 
     # Budget (required in production)
-    budget: Optional[BudgetConfig] = None
+    budget: BudgetConfig | None = None
 
     # Memory
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
@@ -577,26 +578,24 @@ class AgentConfig(BaseModel):
     # Safety
     permissions: PermissionConfig = Field(default_factory=PermissionConfig)
     hitl: HITLConfig = Field(default_factory=HITLConfig)
-    guardrails: List[str] = Field(default_factory=list)   # Guardrail names
+    guardrails: list[str] = Field(default_factory=list)  # Guardrail names
 
     # Loops and context
     loop_limit: int = 50
     context_limit_tokens: int = 128_000
 
     # Output
-    structured_output: StructuredOutputConfig = Field(
-        default_factory=StructuredOutputConfig
-    )
+    structured_output: StructuredOutputConfig = Field(default_factory=StructuredOutputConfig)
 
     # Observability
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 
     # Prompt registry
-    system_prompt_id: Optional[str] = None   # Lookup from PromptRegistry
-    system_prompt_override: Optional[str] = None  # Inline override
+    system_prompt_id: str | None = None  # Lookup from PromptRegistry
+    system_prompt_override: str | None = None  # Inline override
 
     @model_validator(mode="after")
-    def production_requires_budget(self) -> "AgentConfig":
+    def production_requires_budget(self) -> AgentConfig:
         if self.mode == AgentMode.PRODUCTION and self.budget is None:
             raise ValueError(
                 "AgentConfig: 'budget' is required when mode='production'. "
@@ -605,7 +604,7 @@ class AgentConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def production_tightens_loop_limit(self) -> "AgentConfig":
+    def production_tightens_loop_limit(self) -> AgentConfig:
         if self.mode == AgentMode.PRODUCTION and self.loop_limit > 20:
             # Silently enforce the production cap
             object.__setattr__(self, "loop_limit", 20)
@@ -622,14 +621,14 @@ class AgentConfig(BaseModel):
 class StepConfig(BaseModel):
     name: str
     retry: int = 0
-    fallback: Optional[str] = None   # Name of fallback step
-    timeout_s: Optional[float] = None
+    fallback: str | None = None  # Name of fallback step
+    timeout_s: float | None = None
 
 
 class WorkflowConfig(BaseModel):
     name: str
     mode: WorkflowMode = WorkflowMode.SEQUENTIAL
-    budget_usd: Optional[float] = None
+    budget_usd: float | None = None
     max_parallel: int = 10
     loop_limit: int = 50
     on_failure: str = "fail"  # "fail" | "continue" | "fallback"
@@ -642,10 +641,10 @@ class WorkflowConfig(BaseModel):
 
 class TeamConfig(BaseModel):
     name: str
-    strategy: str = "sequential"   # "sequential" | "parallel" | "hierarchical"
-    lead_agent_id: Optional[str] = None
+    strategy: str = "sequential"  # "sequential" | "parallel" | "hierarchical"
+    lead_agent_id: str | None = None
     shared_memory: bool = True
-    budget_usd: Optional[float] = None
+    budget_usd: float | None = None
 
     @field_validator("strategy")
     @classmethod
@@ -663,11 +662,11 @@ class TeamConfig(BaseModel):
 class SessionConfig(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str
-    tenant_id: Optional[str] = None
-    idle_timeout_s: float = 1800.0   # 30 minutes
+    tenant_id: str | None = None
+    idle_timeout_s: float = 1800.0  # 30 minutes
     max_duration_s: float = 86400.0  # 24 hours
-    store: str = "inmemory"          # "inmemory" | "redis"
-    store_config: Dict[str, Any] = Field(default_factory=dict)
+    store: str = "inmemory"  # "inmemory" | "redis"
+    store_config: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

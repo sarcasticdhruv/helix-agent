@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from helix.config import CacheConfig, PlanTemplate
 from helix.interfaces import EmbeddingProvider
@@ -23,6 +23,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     import math
+
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
@@ -34,11 +35,41 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 def _extract_keywords(text: str) -> list[str]:
     """Simple keyword extraction — no NLTK dependency."""
     import re
+
     stop = {
-        "the", "a", "an", "and", "or", "but", "in", "on", "at",
-        "to", "for", "of", "with", "by", "from", "is", "are", "was",
-        "what", "how", "why", "when", "where", "who", "which",
-        "i", "you", "we", "they", "it", "this", "that", "my",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "is",
+        "are",
+        "was",
+        "what",
+        "how",
+        "why",
+        "when",
+        "where",
+        "who",
+        "which",
+        "i",
+        "you",
+        "we",
+        "they",
+        "it",
+        "this",
+        "that",
+        "my",
     }
     words = re.findall(r"[a-zA-Z]{3,}", text.lower())
     return list({w for w in words if w not in stop})[:20]
@@ -80,13 +111,16 @@ class PlanStore:
                 # Update success rate
                 total = existing.run_count + 1
                 new_rate = (existing.success_rate * existing.run_count + 1.0) / total
-                updated = template.model_copy(update={
-                    "run_count": total,
-                    "success_rate": new_rate,
-                    "avg_cost_usd": (
-                        (existing.avg_cost_usd * existing.run_count + template.avg_cost_usd) / total
-                    ),
-                })
+                updated = template.model_copy(
+                    update={
+                        "run_count": total,
+                        "success_rate": new_rate,
+                        "avg_cost_usd": (
+                            (existing.avg_cost_usd * existing.run_count + template.avg_cost_usd)
+                            / total
+                        ),
+                    }
+                )
                 self._templates[template.id] = updated
             else:
                 self._templates[template.id] = template
@@ -112,7 +146,7 @@ class PlanCache:
     def __init__(
         self,
         config: CacheConfig,
-        embedder: Optional[EmbeddingProvider] = None,
+        embedder: EmbeddingProvider | None = None,
         store_path: str = ".helix/plan_cache.json",
     ) -> None:
         self._config = config
@@ -121,14 +155,15 @@ class PlanCache:
         self._hits = 0
         self._total_saved_usd = 0.0
 
-    async def initialize(self, embedder: Optional[EmbeddingProvider] = None) -> None:
+    async def initialize(self, embedder: EmbeddingProvider | None = None) -> None:
         if embedder:
             self._embedder = embedder
         if self._embedder is None:
             from helix.models.embedder import OpenAIEmbedder
+
             self._embedder = OpenAIEmbedder()
 
-    async def match(self, task: str) -> Optional[PlanTemplate]:
+    async def match(self, task: str) -> PlanTemplate | None:
         """
         Return the best matching plan template if similarity >= threshold.
         Returns None if no match or plan cache is disabled.
@@ -143,7 +178,7 @@ class PlanCache:
             keywords = _extract_keywords(task)
             templates = await self._store.all()
 
-            best: Optional[PlanTemplate] = None
+            best: PlanTemplate | None = None
             best_score = 0.0
 
             for template in templates:

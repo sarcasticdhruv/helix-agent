@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import random
-import time
-from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from helix.config import EvalCase
     from helix.eval.suite import EvalSuite
-    from helix.config import EvalCase, EvalCaseResult
 
 
 class ProductionEvalMonitor:
@@ -33,20 +33,20 @@ class ProductionEvalMonitor:
 
     def __init__(
         self,
-        suite: "EvalSuite",
+        suite: EvalSuite,
         sample_rate: float = 0.05,
-        alert_fn: Optional[Callable] = None,
+        alert_fn: Callable | None = None,
     ) -> None:
         self._suite = suite
         self._sample_rate = sample_rate
         self._alert_fn = alert_fn or self._default_alert
-        self._results: List[Any] = []
+        self._results: list[Any] = []
         self._lock = asyncio.Lock()
 
     async def maybe_eval(
         self,
-        result: Any,       # AgentResult
-        case: "EvalCase",
+        result: Any,  # AgentResult
+        case: EvalCase,
     ) -> None:
         """
         Probabilistically evaluate a production result.
@@ -56,7 +56,7 @@ class ProductionEvalMonitor:
             return
         asyncio.create_task(self._evaluate(result, case))
 
-    async def _evaluate(self, result: Any, case: "EvalCase") -> None:
+    async def _evaluate(self, result: Any, case: EvalCase) -> None:
         try:
             eval_result = await self._suite._run_case_from_result(result, case)
             async with self._lock:
@@ -81,7 +81,7 @@ class ProductionEvalMonitor:
             return 1.0
         return sum(1 for r in recent if r.passed) / len(recent)
 
-    def report(self) -> Dict[str, Any]:
+    def report(self) -> dict[str, Any]:
         return {
             "total_sampled": len(self._results),
             "pass_rate": self.recent_pass_rate(),

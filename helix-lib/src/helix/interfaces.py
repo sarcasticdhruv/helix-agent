@@ -15,34 +15,25 @@ Rules:
 from __future__ import annotations
 
 import abc
+from collections.abc import AsyncIterator
 from typing import (
-    Any,
-    AsyncIterator,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
     TYPE_CHECKING,
+    Any,
 )
 
 if TYPE_CHECKING:
     # Forward references to avoid circular imports.
     # These types are defined in config.py and context.py.
     from helix.config import (
-        AgentConfig,
-        MemoryEntry,
-        Episode,
-        TokenUsage,
-        ModelResponse,
+        AuditEntry,
         CacheEntry,
-        PlanTemplate,
+        Episode,
+        EvalCase,
+        GuardrailResult,
         HITLRequest,
         HITLResponse,
-        AuditEntry,
-        GuardrailResult,
-        EvalCase,
-        EvalCaseResult,
+        MemoryEntry,
+        ModelResponse,
         ToolCallRecord,
     )
     from helix.context import ExecutionContext
@@ -66,7 +57,7 @@ class MemoryBackend(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def upsert(self, entry: "MemoryEntry") -> None:
+    async def upsert(self, entry: MemoryEntry) -> None:
         """Insert or update a memory entry by its id."""
         ...
 
@@ -78,10 +69,10 @@ class MemoryBackend(abc.ABC):
     @abc.abstractmethod
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
-        kind_filter: Optional[str] = None,
-    ) -> List["MemoryEntry"]:
+        kind_filter: str | None = None,
+    ) -> list[MemoryEntry]:
         """
         Return top_k entries most similar to query_embedding.
         Optional kind_filter restricts results to a single memory kind.
@@ -89,17 +80,17 @@ class MemoryBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def upsert_episode(self, episode: "Episode") -> None:
+    async def upsert_episode(self, episode: Episode) -> None:
         """Store a completed agent run episode."""
         ...
 
     @abc.abstractmethod
     async def search_episodes(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 3,
-        outcome_filter: Optional[str] = None,
-    ) -> List["Episode"]:
+        outcome_filter: str | None = None,
+    ) -> list[Episode]:
         """Return episodes similar to the given embedding."""
         ...
 
@@ -108,7 +99,7 @@ class MemoryBackend(abc.ABC):
         self,
         key: str,
         expected_version: int,
-        new_entry: "MemoryEntry",
+        new_entry: MemoryEntry,
     ) -> bool:
         """
         Atomic update for shared team memory.
@@ -139,16 +130,16 @@ class CacheBackend(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def upsert(self, entry: "CacheEntry", ttl_seconds: int) -> None:
+    async def upsert(self, entry: CacheEntry, ttl_seconds: int) -> None:
         """Store a cache entry with an expiry TTL."""
         ...
 
     @abc.abstractmethod
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         threshold: float,
-    ) -> Optional["CacheEntry"]:
+    ) -> CacheEntry | None:
         """Return the best matching entry above threshold, or None."""
         ...
 
@@ -163,13 +154,12 @@ class CacheBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def stats(self) -> Dict[str, Any]:
+    async def stats(self) -> dict[str, Any]:
         """Return backend-level stats: size, hit_rate, memory_mb, etc."""
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -194,22 +184,22 @@ class LLMProvider(abc.ABC):
     @abc.abstractmethod
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict[str, Any]] = None,
-    ) -> "ModelResponse":
+        response_format: dict[str, Any] | None = None,
+    ) -> ModelResponse:
         """Send messages and return a complete response."""
         ...
 
     @abc.abstractmethod
     async def stream(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
@@ -217,7 +207,7 @@ class LLMProvider(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def count_tokens(self, messages: List[Dict[str, Any]], model: str) -> int:
+    def count_tokens(self, messages: list[dict[str, Any]], model: str) -> int:
         """
         Count tokens for the given messages without making an API call.
         Used by the cost governor when provider token counts are absent.
@@ -225,13 +215,12 @@ class LLMProvider(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         """List model identifiers this provider supports."""
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -251,11 +240,11 @@ class EmbeddingProvider(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Return one embedding vector per input text."""
         ...
 
-    async def embed_one(self, text: str) -> List[float]:
+    async def embed_one(self, text: str) -> list[float]:
         """Embed a single string. Default delegates to embed_batch."""
         results = await self.embed_batch([text])
         return results[0]
@@ -297,8 +286,8 @@ class Guardrail(abc.ABC):
     async def check(
         self,
         content: str,
-        context: "ExecutionContext",
-    ) -> "GuardrailResult":
+        context: ExecutionContext,
+    ) -> GuardrailResult:
         """
         Evaluate content. Returns a GuardrailResult with:
           passed: bool
@@ -325,7 +314,7 @@ class HITLTransport(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def send_request(self, request: "HITLRequest") -> "HITLResponse":
+    async def send_request(self, request: HITLRequest) -> HITLResponse:
         """
         Deliver the request and await a human decision.
         Must handle its own timeout and return HITLResponse on expiry.
@@ -333,8 +322,7 @@ class HITLTransport(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -355,21 +343,21 @@ class AuditLogBackend(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def append(self, entry: "AuditEntry") -> None:
+    async def append(self, entry: AuditEntry) -> None:
         """Append an immutable audit entry."""
         ...
 
     @abc.abstractmethod
     async def export(
         self,
-        since_timestamp: Optional[float] = None,
-        agent_id: Optional[str] = None,
-    ) -> AsyncIterator["AuditEntry"]:
+        since_timestamp: float | None = None,
+        agent_id: str | None = None,
+    ) -> AsyncIterator[AuditEntry]:
         """Stream audit entries, optionally filtered."""
         ...
 
     @abc.abstractmethod
-    async def verify_chain(self) -> Tuple[bool, Optional[str]]:
+    async def verify_chain(self) -> tuple[bool, str | None]:
         """
         Verify the hash chain is unbroken.
         Returns (ok, first_broken_entry_id).
@@ -377,8 +365,7 @@ class AuditLogBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +381,7 @@ class TraceExporter(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def export_spans(self, spans: List[Dict[str, Any]]) -> None:
+    async def export_spans(self, spans: list[dict[str, Any]]) -> None:
         """Ship spans to the configured backend."""
         ...
 
@@ -415,17 +402,15 @@ class ToolProtocol(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abc.abstractmethod
-    def description(self) -> str:
-        ...
+    def description(self) -> str: ...
 
     @property
     @abc.abstractmethod
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         """JSON Schema describing the tool's input parameters."""
         ...
 
@@ -450,8 +435,7 @@ class EvalScorer(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abc.abstractmethod
@@ -462,9 +446,9 @@ class EvalScorer(abc.ABC):
     @abc.abstractmethod
     async def score(
         self,
-        case: "EvalCase",
+        case: EvalCase,
         result_output: str,
-        tool_calls: List["ToolCallRecord"],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -492,7 +476,7 @@ class FrameworkAdapter(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def run(self, task: str, context: "ExecutionContext") -> Dict[str, Any]:
+    async def run(self, task: str, context: ExecutionContext) -> dict[str, Any]:
         """
         Run the wrapped framework under Helix observation.
         Returns dict with keys: output, cost_usd, steps, raw_result.
@@ -508,7 +492,7 @@ class FrameworkAdapter(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def extract_tool_calls(self, raw_result: Any) -> List["ToolCallRecord"]:
+    def extract_tool_calls(self, raw_result: Any) -> list[ToolCallRecord]:
         """
         Parse framework-specific result format into Helix ToolCallRecords.
         """
@@ -528,26 +512,23 @@ class SessionStore(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def save(self, session_id: str, state: Dict[str, Any]) -> None:
-        ...
+    async def save(self, session_id: str, state: dict[str, Any]) -> None: ...
 
     @abc.abstractmethod
-    async def load(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def load(self, session_id: str) -> dict[str, Any] | None:
         """Return None if session does not exist."""
         ...
 
     @abc.abstractmethod
-    async def delete(self, session_id: str) -> None:
-        ...
+    async def delete(self, session_id: str) -> None: ...
 
     @abc.abstractmethod
-    async def list_sessions(self, agent_id: Optional[str] = None) -> List[str]:
+    async def list_sessions(self, agent_id: str | None = None) -> list[str]:
         """List session IDs, optionally filtered by agent."""
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +545,7 @@ class PromptRegistry(abc.ABC):
     """
 
     @abc.abstractmethod
-    async def get(self, prompt_id: str, version: Optional[str] = None) -> str:
+    async def get(self, prompt_id: str, version: str | None = None) -> str:
         """
         Retrieve a prompt by id.
         If version is None, return the active version.
@@ -589,10 +570,9 @@ class PromptRegistry(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def list_versions(self, prompt_id: str) -> List[str]:
+    async def list_versions(self, prompt_id: str) -> list[str]:
         """Return all version strings for a prompt id, oldest first."""
         ...
 
     @abc.abstractmethod
-    async def health(self) -> bool:
-        ...
+    async def health(self) -> bool: ...

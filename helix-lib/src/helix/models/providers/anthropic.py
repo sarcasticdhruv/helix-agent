@@ -10,7 +10,8 @@ Applies prefix cache breakpoints automatically for long system prompts.
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from helix.config import ModelResponse, TokenUsage, ToolCallRecord
 from helix.errors import HelixProviderError
@@ -26,31 +27,30 @@ class AnthropicProvider(LLMProvider):
     Requires ANTHROPIC_API_KEY environment variable.
     """
 
-    def __init__(self, api_key: Optional[str] = None) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
         try:
             import anthropic
+
             self._client = anthropic.AsyncAnthropic(
                 api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"),
             )
         except ImportError:
-            raise ImportError(
-                "anthropic package required. Install with: pip install anthropic"
-            )
+            raise ImportError("anthropic package required. Install with: pip install anthropic")
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict[str, Any]] = None,
+        response_format: dict[str, Any] | None = None,
     ) -> ModelResponse:
         try:
             system_text, user_messages = self._split_messages(messages)
             prepared_messages = self._prepare_messages(user_messages)
 
-            kwargs: Dict[str, Any] = {
+            kwargs: dict[str, Any] = {
                 "model": model,
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -76,16 +76,16 @@ class AnthropicProvider(LLMProvider):
 
     async def stream(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> AsyncIterator[str]:
         system_text, user_messages = self._split_messages(messages)
         prepared = self._prepare_messages(user_messages)
 
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -103,7 +103,7 @@ class AnthropicProvider(LLMProvider):
                 provider="anthropic", model=model, reason=str(e), retryable=False
             ) from e
 
-    def count_tokens(self, messages: List[Dict[str, Any]], model: str) -> int:
+    def count_tokens(self, messages: list[dict[str, Any]], model: str) -> int:
         """Approximate: chars / 3.5 (Anthropic uses ~3.5 chars per token)."""
         total = 0
         for m in messages:
@@ -116,7 +116,7 @@ class AnthropicProvider(LLMProvider):
                         total += int(len(str(block.get("text", ""))) / 3.5)
         return total
 
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         return ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"]
 
     async def health(self) -> bool:
@@ -135,9 +135,7 @@ class AnthropicProvider(LLMProvider):
     # Anthropic-specific helpers
     # ------------------------------------------------------------------
 
-    def _split_messages(
-        self, messages: List[Dict[str, Any]]
-    ) -> tuple[str, List[Dict[str, Any]]]:
+    def _split_messages(self, messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
         """Split Helix message list into system string + user/assistant messages."""
         system_parts = []
         others = []
@@ -148,9 +146,7 @@ class AnthropicProvider(LLMProvider):
                 others.append(m)
         return "\n".join(system_parts), others
 
-    def _prepare_messages(
-        self, messages: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _prepare_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Convert Helix tool messages to Anthropic's tool_result format.
         Anthropic requires tool results inside user messages.
@@ -162,14 +158,18 @@ class AnthropicProvider(LLMProvider):
 
             if role == "tool":
                 # Wrap as user message with tool_result block
-                prepared.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": m.get("tool_call_id", "unknown"),
-                        "content": content,
-                    }]
-                })
+                prepared.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": m.get("tool_call_id", "unknown"),
+                                "content": content,
+                            }
+                        ],
+                    }
+                )
             else:
                 prepared.append({"role": role, "content": content})
 
@@ -191,7 +191,7 @@ class AnthropicProvider(LLMProvider):
             ]
         return system_text
 
-    def _to_anthropic_tool(self, tool_schema: Dict[str, Any]) -> Dict[str, Any]:
+    def _to_anthropic_tool(self, tool_schema: dict[str, Any]) -> dict[str, Any]:
         """Convert Helix tool schema to Anthropic format."""
         return {
             "name": tool_schema["name"],
@@ -201,20 +201,21 @@ class AnthropicProvider(LLMProvider):
 
     def _normalize(self, raw: Any, model: str) -> ModelResponse:
         """Convert raw Anthropic response to ModelResponse."""
-        import json as _json
 
         content_text = ""
-        tool_calls: List[ToolCallRecord] = []
+        tool_calls: list[ToolCallRecord] = []
 
         for block in raw.content:
             if block.type == "text":
                 content_text += block.text
             elif block.type == "tool_use":
                 args = block.input if isinstance(block.input, dict) else {}
-                tool_calls.append(ToolCallRecord(
-                    tool_name=block.name,
-                    arguments=args,
-                ))
+                tool_calls.append(
+                    ToolCallRecord(
+                        tool_name=block.name,
+                        arguments=args,
+                    )
+                )
 
         usage = TokenUsage(
             prompt_tokens=raw.usage.input_tokens,

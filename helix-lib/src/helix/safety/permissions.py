@@ -9,8 +9,6 @@ No agent can exceed its declared capability surface.
 
 from __future__ import annotations
 
-from typing import List, Optional, Set
-
 from helix.config import PermissionConfig
 from helix.errors import PermissionDeniedError
 
@@ -25,11 +23,11 @@ class PermissionScope:
 
     def __init__(self, config: PermissionConfig, agent_id: str = "") -> None:
         self._agent_id = agent_id
-        self._allowed_tools: Optional[Set[str]] = (
+        self._allowed_tools: set[str] | None = (
             set(config.allowed_tools) if config.allowed_tools is not None else None
         )
-        self._denied_tools: Set[str] = set(config.denied_tools)
-        self._allowed_domains: Optional[Set[str]] = (
+        self._denied_tools: set[str] = set(config.denied_tools)
+        self._allowed_domains: set[str] | None = (
             set(config.allowed_domains) if config.allowed_domains is not None else None
         )
         self._max_file_size_mb = config.max_file_size_mb
@@ -75,17 +73,19 @@ class PermissionScope:
         except PermissionDeniedError:
             return False
 
-    def permitted_tools(self, all_tools: List[str]) -> List[str]:
+    def permitted_tools(self, all_tools: list[str]) -> list[str]:
         return [t for t in all_tools if self.is_tool_permitted(t)]
 
 
 def allow(*tool_names: str) -> PermissionConfig:
     """Convenience factory: create a PermissionConfig that allows only named tools."""
     from helix.config import PermissionConfig
+
     return PermissionConfig(allowed_tools=list(tool_names))
 
 
 def deny(*tool_names: str) -> PermissionConfig:
     """Convenience factory: create a PermissionConfig that denies named tools."""
     from helix.config import PermissionConfig
+
     return PermissionConfig(denied_tools=list(tool_names))

@@ -41,6 +41,7 @@ class CacheController:
     async def initialize(self) -> None:
         """Set up embedders for semantic and plan caches."""
         from helix.models.embedder import OpenAIEmbedder
+
         embedder = OpenAIEmbedder()
         await self.semantic.initialize(embedder=embedder)
         await self.plan.initialize(embedder=embedder)

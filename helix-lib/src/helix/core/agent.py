@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, AsyncIterator, Dict, List, Optional, Type, Union
+from collections.abc import AsyncIterator
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -34,13 +35,13 @@ from helix.config import (
     StructuredOutputConfig,
 )
 from helix.context import ExecutionContext
-from helix.core.tool import ToolRegistry, ToolRegistryView, execute_tool, registry as _global_registry
+from helix.core.tool import ToolRegistry, execute_tool
+from helix.core.tool import registry as _global_registry
 from helix.errors import (
     BudgetExceededError,
     HelixError,
     LoopDetectedError,
 )
-
 
 # ---------------------------------------------------------------------------
 # AgentResult
@@ -50,7 +51,7 @@ from helix.errors import (
 class AgentResult(BaseModel):
     """The return value of Agent.run()."""
 
-    output: Any                  # str or typed model if structured_output enabled
+    output: Any  # str or typed model if structured_output enabled
     steps: int
     cost_usd: float
     run_id: str
@@ -61,9 +62,9 @@ class AgentResult(BaseModel):
     cache_hits: int
     cache_savings_usd: float
     episodes_used: int = 0
-    model_used: Optional[str] = None   # Which model was actually called
-    error: Optional[str] = None
-    trace: Optional[Dict[str, Any]] = None  # Populated if observability enabled
+    model_used: str | None = None  # Which model was actually called
+    error: str | None = None
+    trace: dict[str, Any] | None = None  # Populated if observability enabled
 
     model_config = ConfigDict(frozen=True)
 
@@ -99,16 +100,16 @@ class Agent:
         name: str,
         role: str,
         goal: str,
-        model: Optional[ModelConfig] = None,
-        budget: Optional[BudgetConfig] = None,
+        model: ModelConfig | None = None,
+        budget: BudgetConfig | None = None,
         mode: AgentMode = AgentMode.EXPLORE,
-        tools: Optional[List[Any]] = None,
-        memory: Optional[MemoryConfig] = None,
-        cache: Optional[CacheConfig] = None,
-        permissions: Optional[PermissionConfig] = None,
-        structured_output: Optional[StructuredOutputConfig] = None,
-        observability: Optional[ObservabilityConfig] = None,
-        system_prompt: Optional[str] = None,
+        tools: list[Any] | None = None,
+        memory: MemoryConfig | None = None,
+        cache: CacheConfig | None = None,
+        permissions: PermissionConfig | None = None,
+        structured_output: StructuredOutputConfig | None = None,
+        observability: ObservabilityConfig | None = None,
+        system_prompt: str | None = None,
         **extra_config: Any,
     ) -> None:
         self._config = AgentConfig(
@@ -137,15 +138,15 @@ class Agent:
                 self._registry.register(t)
 
         # Subsystems — lazily initialized on first run
-        self._memory_store: Optional[Any] = None
-        self._cache_controller: Optional[Any] = None
-        self._llm_router: Optional[Any] = None
-        self._tracer: Optional[Any] = None
-        self._cost_governor: Optional[Any] = None
-        self._guardrail_chain: Optional[Any] = None
-        self._hitl_controller: Optional[Any] = None
-        self._context_engine: Optional[Any] = None
-        self._audit_log: Optional[Any] = None
+        self._memory_store: Any | None = None
+        self._cache_controller: Any | None = None
+        self._llm_router: Any | None = None
+        self._tracer: Any | None = None
+        self._cost_governor: Any | None = None
+        self._guardrail_chain: Any | None = None
+        self._hitl_controller: Any | None = None
+        self._context_engine: Any | None = None
+        self._audit_log: Any | None = None
 
         self._initialized: bool = False
 
@@ -156,9 +157,9 @@ class Agent:
     async def run(
         self,
         task: str,
-        session_id: Optional[str] = None,
-        parent_run_id: Optional[str] = None,
-        output_schema: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None,
+        session_id: str | None = None,
+        parent_run_id: str | None = None,
+        output_schema: type[BaseModel] | dict[str, Any] | None = None,
     ) -> AgentResult:
         """
         Execute the agent on the given task.
@@ -202,6 +203,7 @@ class Agent:
             if loop.is_running():
                 # In Jupyter or nested async context
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                     future = pool.submit(asyncio.run, self.run(task, **kwargs))
                     return future.result()
@@ -212,7 +214,7 @@ class Agent:
     async def stream(
         self,
         task: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> AsyncIterator[str]:
         """
         Stream response tokens as they arrive from the LLM.
@@ -228,12 +230,12 @@ class Agent:
         async for chunk in self._llm_router.stream(messages=messages, model=model):
             yield chunk
 
-    def add_tool(self, tool_or_fn: Any) -> "Agent":
+    def add_tool(self, tool_or_fn: Any) -> Agent:
         """Register an additional tool. Returns self for chaining."""
         self._registry.register(tool_or_fn)
         return self
 
-    def clone(self, **overrides: Any) -> "Agent":
+    def clone(self, **overrides: Any) -> Agent:
         """
         Create a copy of this agent with config overrides.
         Useful for A/B testing prompt variants or model differences.
@@ -246,9 +248,15 @@ class Agent:
         new_agent._initialized = False
         # Subsystems will re-init on first run
         for attr in (
-            "_memory_store", "_cache_controller", "_llm_router", "_tracer",
-            "_cost_governor", "_guardrail_chain", "_hitl_controller",
-            "_context_engine", "_audit_log",
+            "_memory_store",
+            "_cache_controller",
+            "_llm_router",
+            "_tracer",
+            "_cost_governor",
+            "_guardrail_chain",
+            "_hitl_controller",
+            "_context_engine",
+            "_audit_log",
         ):
             setattr(new_agent, attr, None)
         return new_agent
@@ -273,7 +281,7 @@ class Agent:
         self,
         ctx: ExecutionContext,
         task: str,
-        output_schema: Optional[Any] = None,
+        output_schema: Any | None = None,
     ) -> AgentResult:
         # 1. Build initial context (system prompt + episodic memory + task)
         await self._build_context(ctx, task)
@@ -304,7 +312,7 @@ class Agent:
         self,
         ctx: ExecutionContext,
         task: str,
-        plan: Optional[Any] = None,
+        plan: Any | None = None,
     ) -> str:
         """
         Core agentic loop:
@@ -351,16 +359,18 @@ class Agent:
             ctx.model_per_step.append(model)
 
             # Record actual cost
-            await ctx.cost.record(
-                self._calculate_actual_cost(response.usage, model)
-            )
+            await ctx.cost.record(self._calculate_actual_cost(response.usage, model))
 
             # Audit
-            await self._audit("llm_response", ctx, {
-                "model": model,
-                "tokens": response.usage.model_dump(),
-                "finish_reason": response.finish_reason,
-            })
+            await self._audit(
+                "llm_response",
+                ctx,
+                {
+                    "model": model,
+                    "tokens": response.usage.model_dump(),
+                    "finish_reason": response.finish_reason,
+                },
+            )
 
             # Guardrails on response
             cleaned = await self._run_guardrails(ctx, response.content)
@@ -395,7 +405,8 @@ class Agent:
                         break
 
                 result_content = (
-                    str(record.result) if record.result is not None
+                    str(record.result)
+                    if record.result is not None
                     else f"[Tool {tc.tool_name} failed: {record.failure_class}]"
                 )
                 await ctx.window.add_tool_result(tc.tool_name, result_content)
@@ -483,7 +494,7 @@ class Agent:
     # Cache helpers
     # ------------------------------------------------------------------
 
-    async def _check_cache(self, ctx: ExecutionContext, task: str) -> Optional[Any]:
+    async def _check_cache(self, ctx: ExecutionContext, task: str) -> Any | None:
         if self._cache_controller is None:
             return None
         try:
@@ -494,7 +505,7 @@ class Agent:
         except Exception:
             return None
 
-    async def _check_plan_cache(self, ctx: ExecutionContext, task: str) -> Optional[Any]:
+    async def _check_plan_cache(self, ctx: ExecutionContext, task: str) -> Any | None:
         if self._cache_controller is None:
             return None
         try:
@@ -537,10 +548,15 @@ class Agent:
             result = await guardrail.check(result_content, ctx)
             if not result.passed:
                 from helix.errors import GuardrailViolationError
-                await self._audit("guardrail_block", ctx, {
-                    "guardrail": guardrail.name,
-                    "reason": result.reason,
-                })
+
+                await self._audit(
+                    "guardrail_block",
+                    ctx,
+                    {
+                        "guardrail": guardrail.name,
+                        "reason": result.reason,
+                    },
+                )
                 raise GuardrailViolationError(
                     guardrail_name=guardrail.name,
                     reason=result.reason or "Content blocked",
@@ -550,14 +566,12 @@ class Agent:
                 result_content = result.modified_content
         return result_content
 
-    async def _handle_tool_failure(
-        self, ctx: ExecutionContext, record: Any
-    ) -> str:
+    async def _handle_tool_failure(self, ctx: ExecutionContext, record: Any) -> str:
         """
         Classify failure and apply recovery strategy.
         Returns "continue" or "abort".
         """
-        from helix.tools.taxonomy import RECOVERY_STRATEGIES, RetryStrategy, EscalateStrategy
+        from helix.tools.taxonomy import RECOVERY_STRATEGIES, EscalateStrategy
 
         strategy = RECOVERY_STRATEGIES.get(record.failure_class)
         if strategy is None:
@@ -565,6 +579,7 @@ class Agent:
 
         if isinstance(strategy, EscalateStrategy) and self._hitl_controller:
             from helix.config import HITLRequest
+
             req = HITLRequest(
                 agent_id=self._config.agent_id,
                 prompt=f"Tool '{record.tool_name}' failed ({record.failure_class}). Continue?",
@@ -572,6 +587,7 @@ class Agent:
             )
             response = await self._hitl_controller.send_request(req)
             from helix.config import HITLDecision
+
             if response.decision == HITLDecision.REJECT:
                 return "abort"
 
@@ -583,11 +599,15 @@ class Agent:
             return
         pct = ctx.cost.budget_pct
         if pct and pct >= self._config.budget.warn_at_pct:
-            await self._audit("budget_warning", ctx, {
-                "spent_usd": ctx.cost.spent_usd,
-                "budget_usd": ctx.cost.budget_usd,
-                "pct": pct,
-            })
+            await self._audit(
+                "budget_warning",
+                ctx,
+                {
+                    "spent_usd": ctx.cost.spent_usd,
+                    "budget_usd": ctx.cost.budget_usd,
+                    "pct": pct,
+                },
+            )
 
     # ------------------------------------------------------------------
     # Memory helpers
@@ -604,6 +624,7 @@ class Agent:
         importance = 0.6
         try:
             from helix.config import MemoryEntry, MemoryKind
+
             entry = MemoryEntry(
                 content=f"[{tool_name}] {content[:500]}",
                 kind=MemoryKind.TOOL_RESULT,
@@ -618,7 +639,7 @@ class Agent:
     # Cost helpers
     # ------------------------------------------------------------------
 
-    def _estimate_call_cost(self, messages: List[Dict], model: str) -> float:
+    def _estimate_call_cost(self, messages: list[dict], model: str) -> float:
         """Rough pre-call cost estimate for budget gate."""
         token_count = sum(len(m.get("content", "")) // 4 for m in messages)
         cost_per_1k = 0.005  # Conservative default
@@ -634,11 +655,12 @@ class Agent:
     # Audit
     # ------------------------------------------------------------------
 
-    async def _audit(self, event: str, ctx: ExecutionContext, details: Dict) -> None:
+    async def _audit(self, event: str, ctx: ExecutionContext, details: dict) -> None:
         if self._audit_log is None:
             return
         try:
             from helix.config import AuditEntry, AuditEventType
+
             entry = AuditEntry(
                 event_type=AuditEventType(event),
                 agent_id=self._config.agent_id,
@@ -658,7 +680,7 @@ class Agent:
         self,
         ctx: ExecutionContext,
         raw_output: str,
-        schema: Optional[Any],
+        schema: Any | None,
     ) -> Any:
         """
         Parse raw LLM output into a typed model.
@@ -691,9 +713,7 @@ class Agent:
                     await ctx.window.add_user(correction_prompt)
                     messages = ctx.window.as_llm_messages()
                     model = ctx.effective_model()
-                    response = await self._llm_router.complete(
-                        messages=messages, model=model
-                    )
+                    response = await self._llm_router.complete(messages=messages, model=model)
                     raw_output = response.content
                 else:
                     # Return raw string on final failure
@@ -706,12 +726,11 @@ class Agent:
 
     async def _finalize(self, ctx: ExecutionContext) -> None:
         """Post-run cleanup: record episode, flush trace."""
-        outcome = (
-            EpisodeOutcome.FAILURE if ctx.error else EpisodeOutcome.SUCCESS
-        )
+        outcome = EpisodeOutcome.FAILURE if ctx.error else EpisodeOutcome.SUCCESS
         if self._memory_store:
             try:
                 from helix.config import Episode
+
                 ep = Episode(
                     agent_id=self._config.agent_id,
                     task=ctx.step_outputs.get(0, "")[:200],
@@ -745,8 +764,9 @@ class Agent:
         cfg = self._config
 
         # LLM Router — auto-detect model from available keys if none specified
-        from helix.models.router import ModelRouter, FALLBACK_CHAINS
         from helix.config_store import best_available_model
+        from helix.models.router import FALLBACK_CHAINS, ModelRouter
+
         primary_was_specified = bool(cfg.model.primary.strip())
         primary = cfg.model.primary.strip() or best_available_model()
         # When auto-detecting, disable complexity-based routing — use the
@@ -767,22 +787,26 @@ class Agent:
 
         # Memory
         from helix.memory.store import MemoryStore
+
         self._memory_store = MemoryStore(config=cfg.memory)
         await self._memory_store.initialize()
 
         # Cache
         if cfg.cache.enabled:
             from helix.cache.controller import CacheController
+
             self._cache_controller = CacheController(config=cfg.cache)
             await self._cache_controller.initialize()
 
         # Context engine
         from helix.context_engine.engine import ContextEngine
+
         self._context_engine = ContextEngine(config=cfg)
 
         # Audit log
         if cfg.observability.audit_enabled:
             from helix.safety.audit import LocalFileAuditLog
+
             self._audit_log = LocalFileAuditLog(
                 agent_id=cfg.agent_id,
                 log_dir=".helix/audit",
@@ -791,6 +815,7 @@ class Agent:
         # Tracer
         if cfg.observability.trace_enabled:
             from helix.observability.tracer import Tracer
+
             self._tracer = Tracer(
                 run_id="",  # Updated per-run
                 agent_id=cfg.agent_id,
@@ -811,7 +836,11 @@ class Agent:
         if self._tracer:
             trace = self._tracer.export()
 
-        model_used = ctx.model_per_step[-1] if ctx.model_per_step else getattr(self, "_resolved_primary", self._config.model.primary)
+        model_used = (
+            ctx.model_per_step[-1]
+            if ctx.model_per_step
+            else getattr(self, "_resolved_primary", self._config.model.primary)
+        )
 
         return AgentResult(
             output=output,

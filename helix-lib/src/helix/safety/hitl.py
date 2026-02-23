@@ -14,11 +14,9 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 from helix.config import HITLConfig, HITLDecision, HITLRequest, HITLResponse
-from helix.errors import HITLTimeoutError
 from helix.interfaces import HITLTransport
 
 
@@ -52,7 +50,7 @@ class CLITransport(HITLTransport):
                 decision = HITLDecision.REJECT
             else:
                 decision = HITLDecision.ESCALATE
-        except asyncio.TimeoutError:
+        except TimeoutError:
             print(f"\n[HELIX HITL] Timeout after {request.timeout_seconds}s — escalating")
             decision = HITLDecision.ESCALATE
 
@@ -126,6 +124,7 @@ class WebhookTransport(HITLTransport):
     async def health(self) -> bool:
         try:
             import httpx
+
             async with httpx.AsyncClient() as client:
                 resp = await client.get(self._response_url, timeout=5.0)
                 return resp.status_code < 500
@@ -146,12 +145,13 @@ class QueueTransport(HITLTransport):
 
     def __init__(self, redis_url: str = "redis://localhost:6379") -> None:
         self._redis_url = redis_url
-        self._redis: Optional[Any] = None
+        self._redis: Any | None = None
 
     async def _get_redis(self) -> Any:
         if self._redis is None:
             try:
                 import redis.asyncio as aioredis
+
                 self._redis = await aioredis.from_url(self._redis_url)
             except ImportError:
                 raise ImportError("redis package required: pip install redis")
@@ -182,7 +182,7 @@ class QueueTransport(HITLTransport):
                 )
         except ImportError:
             raise
-        except Exception as e:
+        except Exception:
             pass  # Fall through to timeout response
 
         return HITLResponse(request_id=request.id, decision=HITLDecision.ESCALATE)
@@ -223,9 +223,9 @@ class HITLController:
 
     def should_trigger(
         self,
-        confidence: Optional[float] = None,
-        tool_name: Optional[str] = None,
-        cost_usd: Optional[float] = None,
+        confidence: float | None = None,
+        tool_name: str | None = None,
+        cost_usd: float | None = None,
     ) -> bool:
         """Return True if HITL should be triggered for this action."""
         if not self._config.enabled:

@@ -11,7 +11,8 @@ Env vars: AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_VERSION
 from __future__ import annotations
 
 import os
-from typing import Any, AsyncIterator, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from helix.config import ModelResponse, TokenUsage, ToolCallRecord
 from helix.errors import HelixProviderError
@@ -37,10 +38,10 @@ class AzureOpenAIProvider(LLMProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        endpoint: Optional[str] = None,
-        api_version: Optional[str] = None,
-        deployment: Optional[str] = None,
+        api_key: str | None = None,
+        endpoint: str | None = None,
+        api_version: str | None = None,
+        deployment: str | None = None,
     ) -> None:
         self._api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY")
         self._endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
@@ -52,6 +53,7 @@ class AzureOpenAIProvider(LLMProvider):
         if self._client is None:
             try:
                 from openai import AsyncAzureOpenAI
+
                 self._client = AsyncAzureOpenAI(
                     api_key=self._api_key,
                     azure_endpoint=self._endpoint,
@@ -63,20 +65,22 @@ class AzureOpenAIProvider(LLMProvider):
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str = "gpt-4o",
-        tools: Optional[List[Dict]] = None,
+        tools: list[dict] | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        response_format: Optional[Dict] = None,
+        response_format: dict | None = None,
         **kwargs,
     ) -> ModelResponse:
         try:
             client = self._get_client()
             deployment = self._deployment or model
             kwargs_ = dict(
-                model=deployment, messages=messages,
-                temperature=temperature, max_tokens=max_tokens,
+                model=deployment,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
             if tools:
                 kwargs_["tools"] = [{"type": "function", "function": t} for t in tools]
@@ -92,22 +96,25 @@ class AzureOpenAIProvider(LLMProvider):
         try:
             client = self._get_client()
             deployment = self._deployment or model
-            async with client.chat.completions.stream(model=deployment, messages=messages) as stream:
+            async with client.chat.completions.stream(
+                model=deployment, messages=messages
+            ) as stream:
                 async for event in stream:
                     if event.choices and event.choices[0].delta.content:
                         yield event.choices[0].delta.content
         except Exception as e:
             raise HelixProviderError(model=model, provider="azure", original=e)
 
-    async def count_tokens(self, messages: List[Dict], model: str) -> int:
+    async def count_tokens(self, messages: list[dict], model: str) -> int:
         try:
             import tiktoken
+
             enc = tiktoken.encoding_for_model("gpt-4")
             return sum(len(enc.encode(m.get("content", "") or "")) for m in messages)
         except Exception:
-            return sum(len((m.get("content") or "")) // 4 for m in messages)
+            return sum(len(m.get("content") or "") // 4 for m in messages)
 
-    def supported_models(self) -> List[str]:
+    def supported_models(self) -> list[str]:
         return ["gpt-4o", "gpt-4o-mini", "gpt-4", "gpt-35-turbo"]
 
     async def health(self) -> bool:
@@ -120,6 +127,7 @@ class AzureOpenAIProvider(LLMProvider):
 
     def _normalize(self, raw, model: str) -> ModelResponse:
         import json
+
         choice = raw.choices[0]
         msg = choice.message
         content = msg.content or ""
@@ -130,14 +138,23 @@ class AzureOpenAIProvider(LLMProvider):
                     args = json.loads(tc.function.arguments)
                 except Exception:
                     args = {}
-                tool_calls.append(ToolCallRecord(
-                    id=tc.id, tool_name=tc.function.name, arguments=args, step=0
-                ))
+                tool_calls.append(
+                    ToolCallRecord(id=tc.id, tool_name=tc.function.name, arguments=args, step=0)
+                )
         usage = TokenUsage(
             prompt_tokens=raw.usage.prompt_tokens if raw.usage else 0,
             completion_tokens=raw.usage.completion_tokens if raw.usage else 0,
-            cached_tokens=getattr(getattr(raw.usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0,
+            cached_tokens=getattr(
+                getattr(raw.usage, "prompt_tokens_details", None), "cached_tokens", 0
+            )
+            or 0,
         )
         finish = "tool_calls" if tool_calls else choice.finish_reason or "stop"
-        return ModelResponse(content=content, tool_calls=tool_calls, usage=usage,
-                             model=model, provider="azure", finish_reason=finish)
+        return ModelResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=usage,
+            model=model,
+            provider="azure",
+            finish_reason=finish,
+        )

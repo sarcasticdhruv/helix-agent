@@ -54,13 +54,15 @@ def main() -> None:
 
     cfg_p = sub.add_parser("config", help="Manage API keys and settings")
     cfg_sub = cfg_p.add_subparsers(dest="config_cmd", required=True)
-    cfg_set = cfg_sub.add_parser("set",    help="Save an API key  (e.g. helix config set GOOGLE_API_KEY sk-...)")
-    cfg_set.add_argument("key",   help="Environment variable name, e.g. GOOGLE_API_KEY")
+    cfg_set = cfg_sub.add_parser(
+        "set", help="Save an API key  (e.g. helix config set GOOGLE_API_KEY sk-...)"
+    )
+    cfg_set.add_argument("key", help="Environment variable name, e.g. GOOGLE_API_KEY")
     cfg_set.add_argument("value", help="The API key value")
-    cfg_sub.add_parser("list",   help="List saved keys (masked)")
+    cfg_sub.add_parser("list", help="List saved keys (masked)")
     cfg_del = cfg_sub.add_parser("delete", help="Delete a saved key")
-    cfg_del.add_argument("key",  help="Key name to delete")
-    cfg_sub.add_parser("path",   help="Show config file location")
+    cfg_del.add_argument("key", help="Key name to delete")
+    cfg_sub.add_parser("path", help="Show config file location")
 
     sub.add_parser("models", help="List available models with pricing")
 
@@ -97,17 +99,19 @@ async def _dispatch(args: argparse.Namespace) -> None:
 async def _cmd_doctor() -> None:
     print("Helix Doctor -- checking environment...\n")
     from helix.runtime.health import environment_doctor
+
     results = await environment_doctor()
 
     overall = results["overall"].upper()
     print("Overall: " + overall + "\n")
 
     # Remind Windows/PowerShell users of correct syntax
-    import sys, os
+    import sys
+
     if sys.platform == "win32" and results["providers_available"] == 0:
         print("  NOTE (Windows/PowerShell): use $env: to set environment variables.")
-        print("  Example:  $env:GOOGLE_API_KEY = \"your-key-here\"")
-        print("  NOT:      set GOOGLE_API_KEY=\"...\"  (that sets a PS variable, not env)")
+        print('  Example:  $env:GOOGLE_API_KEY = "your-key-here"')
+        print('  NOT:      set GOOGLE_API_KEY="..."  (that sets a PS variable, not env)')
         print()
 
     available = results["providers_available"]
@@ -162,6 +166,7 @@ async def _cmd_run(args: argparse.Namespace) -> None:
         return
     print(f"Running {args.file}...")
     import runpy
+
     runpy.run_path(str(path), run_name="__main__")
 
 
@@ -170,6 +175,7 @@ async def _cmd_trace(args: argparse.Namespace) -> None:
 
     if args.diff:
         from helix.observability.ghost_debug import GhostDebugResolver
+
         resolver = GhostDebugResolver()
         report = await resolver.compare(args.run_id, args.diff)
         if report.identical:
@@ -207,6 +213,7 @@ async def _cmd_eval(args: argparse.Namespace) -> None:
                 print(f"Eval result not found: {run_id}", file=sys.stderr)
                 sys.exit(1)
         from helix.config import EvalRunResult
+
         a = EvalRunResult(**json.loads((results_dir / f"{args.run_a}.json").read_text()))
         b = EvalRunResult(**json.loads((results_dir / f"{args.run_b}.json").read_text()))
         delta = b.pass_rate - a.pass_rate
@@ -237,12 +244,14 @@ async def _cmd_cost(args: argparse.Namespace) -> None:
         try:
             data = json.loads(path.read_text())
             cost = sum(s.get("meta", {}).get("cost_usd", 0) for s in data.get("spans", []))
-            runs.append({
-                "run_id": data.get("run_id", path.stem),
-                "agent": data.get("agent_name", "unknown"),
-                "cost": cost,
-                "duration_s": data.get("duration_s", 0),
-            })
+            runs.append(
+                {
+                    "run_id": data.get("run_id", path.stem),
+                    "agent": data.get("agent_name", "unknown"),
+                    "cost": cost,
+                    "duration_s": data.get("duration_s", 0),
+                }
+            )
             total_cost += cost
         except Exception:
             continue
@@ -254,19 +263,23 @@ async def _cmd_cost(args: argparse.Namespace) -> None:
     print(f"{'Run ID':<20} {'Agent':<20} {'Cost':>10} {'Duration':>10}")
     print("-" * 65)
     for r in runs[-20:]:
-        print(f"{r['run_id'][:20]:<20} {r['agent'][:20]:<20} ${r['cost']:>9.4f} {r['duration_s']:>9.1f}s")
+        print(
+            f"{r['run_id'][:20]:<20} {r['agent'][:20]:<20} ${r['cost']:>9.4f} {r['duration_s']:>9.1f}s"
+        )
     print("-" * 65)
     print(f"{'TOTAL':<41} ${total_cost:>9.4f}")
 
 
 async def _cmd_config(args) -> None:
-    from helix.config_store import set_key, list_keys, delete_key, config_path
+    from helix.config_store import config_path, delete_key, list_keys, set_key
 
     if args.config_cmd == "set":
         set_key(args.key, args.value)
         # Mask API keys but show model names in full
         sensitive = any(k in args.key for k in ["KEY", "SECRET", "TOKEN", "PASSWORD"])
-        display_val = (args.value[:6] + "...") if (sensitive and len(args.value) > 9) else args.value
+        display_val = (
+            (args.value[:6] + "...") if (sensitive and len(args.value) > 9) else args.value
+        )
         print(f"Saved {args.key} = {display_val}")
         print(f"Config file: {config_path()}")
         print()
@@ -304,8 +317,8 @@ async def _cmd_config(args) -> None:
 
 
 async def _cmd_models() -> None:
-    from helix.models.router import MODEL_PRICING, _detect_provider
     from helix.config_store import best_available_model
+    from helix.models.router import MODEL_PRICING, _detect_provider
 
     best = best_available_model()
     print(f"{'Model':<48} {'Provider':<12} {'Prompt/1K':>10} {'Compl/1K':>10}  Available")
@@ -318,6 +331,7 @@ async def _cmd_models() -> None:
         current = " <- default" if model == best else ""
         # Check if provider key is set
         import os
+
         key_map = {
             "openai": ["OPENAI_API_KEY"],
             "anthropic": ["ANTHROPIC_API_KEY"],
@@ -342,6 +356,7 @@ async def _cmd_models() -> None:
 
 async def _cmd_replay(args: argparse.Namespace) -> None:
     from helix.observability.replay import FailureReplay
+
     try:
         replay = FailureReplay.from_run_id(args.run_id)
     except FileNotFoundError:

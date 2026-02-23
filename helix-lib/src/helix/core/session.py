@@ -11,14 +11,11 @@ so agents behave coherently across a conversation.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
-import uuid
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from helix.config import SessionConfig
-from helix.errors import SessionExpiredError, SessionNotFoundError
+from helix.errors import SessionExpiredError
 from helix.interfaces import SessionStore
 
 
@@ -26,14 +23,14 @@ class InMemorySessionStore(SessionStore):
     """Default session store for single-process deployments."""
 
     def __init__(self) -> None:
-        self._sessions: Dict[str, Dict[str, Any]] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
-    async def save(self, session_id: str, state: Dict[str, Any]) -> None:
+    async def save(self, session_id: str, state: dict[str, Any]) -> None:
         async with self._lock:
             self._sessions[session_id] = state
 
-    async def load(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def load(self, session_id: str) -> dict[str, Any] | None:
         async with self._lock:
             return self._sessions.get(session_id)
 
@@ -41,13 +38,12 @@ class InMemorySessionStore(SessionStore):
         async with self._lock:
             self._sessions.pop(session_id, None)
 
-    async def list_sessions(self, agent_id: Optional[str] = None) -> List[str]:
+    async def list_sessions(self, agent_id: str | None = None) -> list[str]:
         async with self._lock:
             sessions = list(self._sessions.keys())
             if agent_id:
                 sessions = [
-                    sid for sid in sessions
-                    if self._sessions[sid].get("agent_id") == agent_id
+                    sid for sid in sessions if self._sessions[sid].get("agent_id") == agent_id
                 ]
             return sessions
 
@@ -74,8 +70,8 @@ class Session:
     def __init__(
         self,
         agent: Any,
-        config: Optional[SessionConfig] = None,
-        store: Optional[SessionStore] = None,
+        config: SessionConfig | None = None,
+        store: SessionStore | None = None,
     ) -> None:
         self._agent = agent
         self._config = config or SessionConfig(agent_id=agent.agent_id)
@@ -84,7 +80,7 @@ class Session:
         self._created_at = time.time()
         self._last_active = time.time()
         self._turn_count = 0
-        self._history: List[Dict[str, str]] = []  # [{role, content}]
+        self._history: list[dict[str, str]] = []  # [{role, content}]
         self._active = False
 
     @property
@@ -153,10 +149,7 @@ class Session:
             history_lines.append(f"{role}: {turn['content'][:300]}")
 
         history_str = "\n".join(history_lines)
-        return (
-            f"[Conversation history]\n{history_str}\n\n"
-            f"[Current message]\n{message}"
-        )
+        return f"[Conversation history]\n{history_str}\n\n[Current message]\n{message}"
 
     def _check_expiry(self) -> None:
         now = time.time()

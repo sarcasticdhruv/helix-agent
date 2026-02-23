@@ -16,7 +16,8 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from helix.config import RuntimeConfig
 
@@ -36,14 +37,14 @@ class Runtime:
         await rt.start()
     """
 
-    def __init__(self, config: Optional[RuntimeConfig] = None) -> None:
+    def __init__(self, config: RuntimeConfig | None = None) -> None:
         self._config = config or RuntimeConfig()
-        self._agents: Dict[str, Any] = {}
-        self._workflows: Dict[str, Any] = {}
-        self._event_handlers: Dict[str, List[Callable]] = {}
-        self._schedule_handlers: List[tuple] = []  # (cron, handler)
+        self._agents: dict[str, Any] = {}
+        self._workflows: dict[str, Any] = {}
+        self._event_handlers: dict[str, list[Callable]] = {}
+        self._schedule_handlers: list[tuple] = []  # (cron, handler)
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=self._config.queue_max_size)
-        self._workers: List[asyncio.Task] = []
+        self._workers: list[asyncio.Task] = []
         self._running: bool = False
         self._run_count: int = 0
         self._total_cost: float = 0.0
@@ -53,7 +54,7 @@ class Runtime:
     # Registration
     # ------------------------------------------------------------------
 
-    def register(self, obj: Any, name: Optional[str] = None) -> "Runtime":
+    def register(self, obj: Any, name: str | None = None) -> Runtime:
         """Register an Agent or Workflow with the runtime."""
         obj_name = name or getattr(obj, "name", str(uuid.uuid4())[:8])
         if hasattr(obj, "run") and hasattr(obj, "config"):
@@ -62,19 +63,19 @@ class Runtime:
             self._workflows[obj_name] = obj
         return self
 
-    def on_event(self, event_name: str, handler: Callable) -> "Runtime":
+    def on_event(self, event_name: str, handler: Callable) -> Runtime:
         """Register a handler for a named event."""
         if event_name not in self._event_handlers:
             self._event_handlers[event_name] = []
         self._event_handlers[event_name].append(handler)
         return self
 
-    def on_schedule(self, cron: str, handler: Callable) -> "Runtime":
+    def on_schedule(self, cron: str, handler: Callable) -> Runtime:
         """Register a handler on a cron schedule (requires croniter)."""
         self._schedule_handlers.append((cron, handler))
         return self
 
-    def subscribe(self, topic: str, handler: Callable) -> "Runtime":
+    def subscribe(self, topic: str, handler: Callable) -> Runtime:
         """Alias for on_event — pub/sub style."""
         return self.on_event(topic, handler)
 
@@ -162,16 +163,14 @@ class Runtime:
         """Worker coroutine — pulls tasks from queue and executes them."""
         while self._running:
             try:
-                name, task = await asyncio.wait_for(
-                    self._queue.get(), timeout=1.0
-                )
+                name, task = await asyncio.wait_for(self._queue.get(), timeout=1.0)
                 try:
                     await self.run(name, task)
                 except Exception:
                     pass
                 finally:
                     self._queue.task_done()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except Exception:
                 continue
@@ -198,7 +197,7 @@ class Runtime:
                     continue
             await asyncio.sleep(60)
 
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         return {
             "running": self._running,
             "workers_alive": sum(1 for w in self._workers if not w.done()),

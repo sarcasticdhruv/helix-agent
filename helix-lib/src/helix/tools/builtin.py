@@ -19,11 +19,11 @@ import asyncio
 import json
 import os
 import re
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from helix.core.tool import tool, registry
-
+from helix.core.tool import registry, tool
 
 # ---------------------------------------------------------------------------
 # Web / HTTP
@@ -35,17 +35,22 @@ from helix.core.tool import tool, registry
     timeout=15.0,
     retries=2,
 )
-async def web_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     """
     :param query: The search query string.
     :param max_results: Maximum number of results to return (1-10).
     """
     try:
         from duckduckgo_search import DDGS
+
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=max_results))
             return [
-                {"title": r.get("title", ""), "url": r.get("href", ""), "snippet": r.get("body", "")}
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                }
                 for r in results
             ]
     except ImportError:
@@ -59,13 +64,14 @@ async def web_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
     timeout=20.0,
     retries=1,
 )
-async def fetch_url(url: str, timeout: float = 10.0) -> Dict[str, Any]:
+async def fetch_url(url: str, timeout: float = 10.0) -> dict[str, Any]:
     """
     :param url: The URL to fetch.
     :param timeout: Request timeout in seconds.
     """
     try:
         import httpx
+
         async with httpx.AsyncClient() as client:
             resp = await client.get(url, timeout=timeout, follow_redirects=True)
             text = resp.text
@@ -93,7 +99,7 @@ async def fetch_url(url: str, timeout: float = 10.0) -> Dict[str, Any]:
     description="Read the contents of a text file. Returns file content as a string.",
     timeout=10.0,
 )
-async def read_file(path: str, max_chars: int = 50_000) -> Dict[str, Any]:
+async def read_file(path: str, max_chars: int = 50_000) -> dict[str, Any]:
     """
     :param path: Absolute or relative file path.
     :param max_chars: Maximum characters to return.
@@ -119,7 +125,7 @@ async def read_file(path: str, max_chars: int = 50_000) -> Dict[str, Any]:
     description="Write content to a file. Creates parent directories if needed.",
     timeout=10.0,
 )
-async def write_file(path: str, content: str, mode: str = "w") -> Dict[str, Any]:
+async def write_file(path: str, content: str, mode: str = "w") -> dict[str, Any]:
     """
     :param path: File path to write to.
     :param content: Content to write.
@@ -139,7 +145,7 @@ async def write_file(path: str, content: str, mode: str = "w") -> Dict[str, Any]
     description="List files in a directory. Returns file names, sizes, and types.",
     timeout=5.0,
 )
-async def list_directory(path: str = ".", pattern: str = "*") -> Dict[str, Any]:
+async def list_directory(path: str = ".", pattern: str = "*") -> dict[str, Any]:
     """
     :param path: Directory path to list.
     :param pattern: Glob pattern to filter files.
@@ -150,11 +156,13 @@ async def list_directory(path: str = ".", pattern: str = "*") -> Dict[str, Any]:
             return {"error": f"Not a directory: {path}"}
         entries = []
         for item in sorted(p.glob(pattern))[:100]:
-            entries.append({
-                "name": item.name,
-                "type": "dir" if item.is_dir() else "file",
-                "size_bytes": item.stat().st_size if item.is_file() else 0,
-            })
+            entries.append(
+                {
+                    "name": item.name,
+                    "type": "dir" if item.is_dir() else "file",
+                    "size_bytes": item.stat().st_size if item.is_file() else 0,
+                }
+            )
         return {"path": str(p.absolute()), "entries": entries, "count": len(entries)}
     except Exception as e:
         return {"error": str(e)}
@@ -169,7 +177,7 @@ async def list_directory(path: str = ".", pattern: str = "*") -> Dict[str, Any]:
     description="Evaluate a safe mathematical expression. Supports arithmetic, math functions, and basic statistics.",
     timeout=5.0,
 )
-async def calculator(expression: str) -> Dict[str, Any]:
+async def calculator(expression: str) -> dict[str, Any]:
     """
     :param expression: Math expression to evaluate (e.g., '2 ** 10', 'sqrt(144)').
     """
@@ -177,11 +185,23 @@ async def calculator(expression: str) -> Dict[str, Any]:
 
     safe_globals = {
         "__builtins__": {},
-        "abs": abs, "round": round, "min": min, "max": max,
-        "sum": sum, "len": len, "pow": pow,
-        "sqrt": math.sqrt, "log": math.log, "log10": math.log10,
-        "sin": math.sin, "cos": math.cos, "tan": math.tan,
-        "pi": math.pi, "e": math.e, "ceil": math.ceil, "floor": math.floor,
+        "abs": abs,
+        "round": round,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "len": len,
+        "pow": pow,
+        "sqrt": math.sqrt,
+        "log": math.log,
+        "log10": math.log10,
+        "sin": math.sin,
+        "cos": math.cos,
+        "tan": math.tan,
+        "pi": math.pi,
+        "e": math.e,
+        "ceil": math.ceil,
+        "floor": math.floor,
     }
     # Reject dangerous patterns
     if any(kw in expression for kw in ("import", "exec", "eval", "__", "open", "os")):
@@ -197,7 +217,7 @@ async def calculator(expression: str) -> Dict[str, Any]:
     description="Parse and query JSON data. Supports dot-notation key access and basic filtering.",
     timeout=5.0,
 )
-async def json_query(data: str, query: str = "") -> Dict[str, Any]:
+async def json_query(data: str, query: str = "") -> dict[str, Any]:
     """
     :param data: JSON string to parse.
     :param query: Dot-notation path to extract (e.g., 'users.0.name'). Empty returns full object.
@@ -235,12 +255,13 @@ async def json_query(data: str, query: str = "") -> Dict[str, Any]:
     description="Get the current date and time in ISO format.",
     timeout=2.0,
 )
-async def get_datetime(timezone: str = "UTC") -> Dict[str, str]:
+async def get_datetime(timezone: str = "UTC") -> dict[str, str]:
     """
     :param timezone: Timezone name (e.g., 'UTC', 'US/Eastern'). Defaults to UTC.
     """
-    from datetime import datetime, timezone as tz
-    now = datetime.now(tz.utc)
+    from datetime import datetime
+
+    now = datetime.now(UTC)
     return {
         "iso": now.isoformat(),
         "date": now.strftime("%Y-%m-%d"),
@@ -253,7 +274,7 @@ async def get_datetime(timezone: str = "UTC") -> Dict[str, str]:
     description="Read environment variables. Cannot read sensitive vars (keys, tokens, passwords).",
     timeout=2.0,
 )
-async def get_env(key: str) -> Dict[str, Any]:
+async def get_env(key: str) -> dict[str, Any]:
     """
     :param key: Environment variable name to read.
     """
@@ -275,7 +296,7 @@ async def get_env(key: str) -> Dict[str, Any]:
     description="Count words, characters, sentences, and paragraphs in text.",
     timeout=2.0,
 )
-async def text_stats(text: str) -> Dict[str, int]:
+async def text_stats(text: str) -> dict[str, int]:
     """
     :param text: The text to analyze.
     """
@@ -295,7 +316,7 @@ async def text_stats(text: str) -> Dict[str, int]:
     description="Extract URLs from text.",
     timeout=2.0,
 )
-async def extract_urls(text: str) -> Dict[str, Any]:
+async def extract_urls(text: str) -> dict[str, Any]:
     """
     :param text: Text to extract URLs from.
     """
@@ -308,7 +329,7 @@ async def extract_urls(text: str) -> Dict[str, Any]:
     description="Sleep for a specified number of seconds. Useful for rate-limiting retries.",
     timeout=70.0,
 )
-async def sleep(seconds: float) -> Dict[str, float]:
+async def sleep(seconds: float) -> dict[str, float]:
     """
     :param seconds: Number of seconds to sleep (max 60).
     """
@@ -322,9 +343,18 @@ async def sleep(seconds: float) -> Dict[str, float]:
 # ---------------------------------------------------------------------------
 
 _BUILTIN_TOOLS = [
-    web_search, fetch_url, read_file, write_file, list_directory,
-    calculator, json_query, get_datetime, get_env,
-    text_stats, extract_urls, sleep,
+    web_search,
+    fetch_url,
+    read_file,
+    write_file,
+    list_directory,
+    calculator,
+    json_query,
+    get_datetime,
+    get_env,
+    text_stats,
+    extract_urls,
+    sleep,
 ]
 
 for _t in _BUILTIN_TOOLS:

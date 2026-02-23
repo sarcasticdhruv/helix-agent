@@ -10,7 +10,7 @@ Guardrails are applied in sequence by the agent's reasoning loop.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Pattern
+from re import Pattern
 
 from helix.config import GuardrailResult
 from helix.interfaces import Guardrail
@@ -27,15 +27,15 @@ class PIIRedactor(Guardrail):
     Patterns: email, phone, SSN, credit card, IP address.
     """
 
-    _PATTERNS: List[tuple[str, Pattern]] = [
-        ("email",   re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")),
-        ("phone",   re.compile(r"\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")),
-        ("ssn",     re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
-        ("cc",      re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")),
-        ("ip",      re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
+    _PATTERNS: list[tuple[str, Pattern]] = [
+        ("email", re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")),
+        ("phone", re.compile(r"\b(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b")),
+        ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+        ("cc", re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b")),
+        ("ip", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")),
     ]
 
-    def __init__(self, patterns: Optional[List[str]] = None) -> None:
+    def __init__(self, patterns: list[str] | None = None) -> None:
         """
         Args:
             patterns: Restrict to specific pattern names. None = all patterns.
@@ -108,7 +108,7 @@ class LengthGuard(Guardrail):
 class KeywordBlockGuard(Guardrail):
     """Blocks responses containing any of the configured keywords."""
 
-    def __init__(self, blocked_keywords: List[str], case_sensitive: bool = False) -> None:
+    def __init__(self, blocked_keywords: list[str], case_sensitive: bool = False) -> None:
         self._keywords = blocked_keywords
         self._case_sensitive = case_sensitive
 
@@ -144,6 +144,7 @@ class SchemaGuard(Guardrail):
 
     async def check(self, content: str, context: ExecutionContext) -> GuardrailResult:
         import json
+
         stripped = content.strip()
         if not (stripped.startswith("{") or stripped.startswith("[")):
             return GuardrailResult(passed=True, guardrail_name=self.name)
@@ -166,7 +167,7 @@ class GuardrailChain:
     PII redaction modifies content for the next guardrail in chain.
     """
 
-    def __init__(self, guardrails: List[Guardrail]) -> None:
+    def __init__(self, guardrails: list[Guardrail]) -> None:
         self._guardrails = guardrails
 
     async def check(self, content: str, context: ExecutionContext) -> GuardrailResult:
@@ -196,7 +197,7 @@ BUILTIN_GUARDRAILS = {
 }
 
 
-def build_guardrail_chain(names: List[str]) -> GuardrailChain:
+def build_guardrail_chain(names: list[str]) -> GuardrailChain:
     """
     Build a GuardrailChain from a list of built-in guardrail names.
     For custom configuration, instantiate guardrails directly.

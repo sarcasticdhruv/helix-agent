@@ -10,11 +10,10 @@ Strategies are objects, not strings — they carry parameters.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type
+from dataclasses import dataclass
+from typing import Any
 
 from helix.config import FailureClass
-
 
 # ---------------------------------------------------------------------------
 # Recovery strategy types
@@ -24,16 +23,16 @@ from helix.config import FailureClass
 @dataclass(frozen=True)
 class RetryStrategy:
     max: int = 3
-    backoff: str = "exponential"   # "exponential" | "fixed" | "linear"
+    backoff: str = "exponential"  # "exponential" | "fixed" | "linear"
     delay_s: float = 1.0
     jitter: bool = True
-    hint: Optional[str] = None     # Injected into retry prompt for schema errors
+    hint: str | None = None  # Injected into retry prompt for schema errors
 
 
 @dataclass(frozen=True)
 class EscalateStrategy:
     notify: bool = True
-    message: Optional[str] = None
+    message: str | None = None
     check_permissions: bool = False
     include_context: bool = False
 
@@ -41,13 +40,13 @@ class EscalateStrategy:
 @dataclass(frozen=True)
 class FallbackStrategy:
     try_alternative: bool = True
-    fallback_tool: Optional[str] = None
+    fallback_tool: str | None = None
 
 
 @dataclass(frozen=True)
 class SkipStrategy:
     log: bool = True
-    warn_model: bool = True   # Include real tool list in next prompt
+    warn_model: bool = True  # Include real tool list in next prompt
 
 
 @dataclass(frozen=True)
@@ -55,43 +54,42 @@ class AbortStrategy:
     reason: str = ""
 
 
-RecoveryStrategy = RetryStrategy | EscalateStrategy | FallbackStrategy | SkipStrategy | AbortStrategy
+RecoveryStrategy = (
+    RetryStrategy | EscalateStrategy | FallbackStrategy | SkipStrategy | AbortStrategy
+)
 
 
 # ---------------------------------------------------------------------------
 # Strategy mapping
 # ---------------------------------------------------------------------------
 
-RECOVERY_STRATEGIES: Dict[FailureClass, RecoveryStrategy] = {
-    FailureClass.TIMEOUT: RetryStrategy(
-        max=3, backoff="exponential", jitter=True
-    ),
+RECOVERY_STRATEGIES: dict[FailureClass, RecoveryStrategy] = {
+    FailureClass.TIMEOUT: RetryStrategy(max=3, backoff="exponential", jitter=True),
     FailureClass.AUTH_ERROR: EscalateStrategy(
         notify=True, message="Tool authentication failed. Provide updated credentials."
     ),
     FailureClass.SCHEMA_MISMATCH: RetryStrategy(
-        max=2, backoff="fixed", delay_s=0.5,
-        hint="The arguments did not match the tool's expected schema. Correct them."
+        max=2,
+        backoff="fixed",
+        delay_s=0.5,
+        hint="The arguments did not match the tool's expected schema. Correct them.",
     ),
-    FailureClass.RATE_LIMIT: RetryStrategy(
-        max=5, backoff="fixed", delay_s=60.0, jitter=False
-    ),
+    FailureClass.RATE_LIMIT: RetryStrategy(max=5, backoff="fixed", delay_s=60.0, jitter=False),
     FailureClass.NOT_FOUND: FallbackStrategy(try_alternative=True),
     FailureClass.PERMISSION_DENIED: EscalateStrategy(
-        notify=True, check_permissions=True,
-        message="Agent attempted to access a resource it does not have permission to use."
+        notify=True,
+        check_permissions=True,
+        message="Agent attempted to access a resource it does not have permission to use.",
     ),
     FailureClass.HALLUCINATED_CALL: SkipStrategy(log=True, warn_model=True),
-    FailureClass.NETWORK_ERROR: RetryStrategy(
-        max=3, backoff="exponential", jitter=True
-    ),
+    FailureClass.NETWORK_ERROR: RetryStrategy(max=3, backoff="exponential", jitter=True),
     FailureClass.VALIDATION_ERROR: RetryStrategy(
-        max=2, backoff="fixed", delay_s=0.5,
-        hint="The tool output did not match the expected format. Try again."
+        max=2,
+        backoff="fixed",
+        delay_s=0.5,
+        hint="The tool output did not match the expected format. Try again.",
     ),
-    FailureClass.UNKNOWN: EscalateStrategy(
-        notify=True, include_context=True
-    ),
+    FailureClass.UNKNOWN: EscalateStrategy(notify=True, include_context=True),
 }
 
 
@@ -111,14 +109,14 @@ class FailureTaxonomyEngine:
       4. Exception message string patterns
     """
 
-    def __init__(self, registry_names: List[str]) -> None:
+    def __init__(self, registry_names: list[str]) -> None:
         self._registry_names = set(registry_names)
 
     def classify(
         self,
         tool_name: str,
         exception: Exception,
-        call_args: Optional[Dict[str, Any]] = None,
+        call_args: dict[str, Any] | None = None,
     ) -> FailureClass:
         # Hallucination: tool not registered
         if tool_name not in self._registry_names:
@@ -138,15 +136,15 @@ class FailureTaxonomyEngine:
         )
 
         exc_map = {
-            ToolTimeoutError:         FailureClass.TIMEOUT,
-            ToolAuthError:            FailureClass.AUTH_ERROR,
-            ToolSchemaMismatchError:  FailureClass.SCHEMA_MISMATCH,
-            ToolRateLimitError:       FailureClass.RATE_LIMIT,
-            ToolNotFoundError:        FailureClass.NOT_FOUND,
-            ToolPermissionError:      FailureClass.PERMISSION_DENIED,
-            ToolHallucinatedError:    FailureClass.HALLUCINATED_CALL,
-            ToolNetworkError:         FailureClass.NETWORK_ERROR,
-            ToolValidationError:      FailureClass.VALIDATION_ERROR,
+            ToolTimeoutError: FailureClass.TIMEOUT,
+            ToolAuthError: FailureClass.AUTH_ERROR,
+            ToolSchemaMismatchError: FailureClass.SCHEMA_MISMATCH,
+            ToolRateLimitError: FailureClass.RATE_LIMIT,
+            ToolNotFoundError: FailureClass.NOT_FOUND,
+            ToolPermissionError: FailureClass.PERMISSION_DENIED,
+            ToolHallucinatedError: FailureClass.HALLUCINATED_CALL,
+            ToolNetworkError: FailureClass.NETWORK_ERROR,
+            ToolValidationError: FailureClass.VALIDATION_ERROR,
         }
         for exc_type, failure_class in exc_map.items():
             if isinstance(exception, exc_type):

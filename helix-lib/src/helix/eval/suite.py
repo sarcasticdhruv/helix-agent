@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from helix.config import EvalCase, EvalCaseResult, EvalRunResult
 from helix.eval.scoring import DEFAULT_SCORERS
@@ -45,20 +46,20 @@ class EvalSuite:
     def __init__(
         self,
         name: str,
-        scorers: Optional[List[EvalScorer]] = None,
+        scorers: list[EvalScorer] | None = None,
         results_dir: str = ".helix/eval_results",
     ) -> None:
         self.name = name
-        self._cases: List[EvalCase] = []
+        self._cases: list[EvalCase] = []
         self._scorers = scorers or (DEFAULT_SCORERS + [TrajectoryScorer()])
         self._results_dir = Path(results_dir)
-        self._history: List[EvalRunResult] = []
+        self._history: list[EvalRunResult] = []
 
     # ------------------------------------------------------------------
     # Case registration
     # ------------------------------------------------------------------
 
-    def case(self, fn: Callable) -> "EvalSuite":
+    def case(self, fn: Callable) -> EvalSuite:
         """Decorator to register an EvalCase factory function."""
         result = fn()
         if isinstance(result, EvalCase):
@@ -68,12 +69,12 @@ class EvalSuite:
             self._cases.append(result.model_copy(update={"name": fn.__name__}))
         return self
 
-    def add_case(self, case: EvalCase) -> "EvalSuite":
+    def add_case(self, case: EvalCase) -> EvalSuite:
         """Register a case directly."""
         self._cases.append(case)
         return self
 
-    def add_cases(self, cases: List[EvalCase]) -> "EvalSuite":
+    def add_cases(self, cases: list[EvalCase]) -> EvalSuite:
         for case in cases:
             self._cases.append(case)
         return self
@@ -85,7 +86,7 @@ class EvalSuite:
     async def run(
         self,
         agent: Any,
-        subset: Optional[List[str]] = None,
+        subset: list[str] | None = None,
         verbose: bool = False,
     ) -> EvalRunResult:
         """
@@ -93,12 +94,9 @@ class EvalSuite:
         Returns EvalRunResult with per-case scores.
         """
         start = time.time()
-        cases = (
-            [c for c in self._cases if c.name in subset]
-            if subset else self._cases
-        )
+        cases = [c for c in self._cases if c.name in subset] if subset else self._cases
 
-        results: List[EvalCaseResult] = []
+        results: list[EvalCaseResult] = []
         for case in cases:
             if verbose:
                 print(f"  Running: {case.name}...")
@@ -139,7 +137,7 @@ class EvalSuite:
             failure_reason = str(e)
 
         # Score across all scorers
-        scores: Dict[str, float] = {}
+        scores: dict[str, float] = {}
         total_weight = sum(s.weight for s in self._scorers)
 
         for scorer in self._scorers:
@@ -156,10 +154,7 @@ class EvalSuite:
                 scores[scorer.name] = 0.0
 
         # Weighted overall
-        overall = sum(
-            scores.get(s.name, 0.0) * s.weight
-            for s in self._scorers
-        )
+        overall = sum(scores.get(s.name, 0.0) * s.weight for s in self._scorers)
         if total_weight > 0:
             overall /= total_weight
         overall = max(0.0, min(1.0, overall))
@@ -187,14 +182,17 @@ class EvalSuite:
         cost_usd = getattr(agent_result, "cost_usd", 0.0)
         steps = getattr(agent_result, "steps", 0)
 
-        scores: Dict[str, float] = {}
+        scores: dict[str, float] = {}
         total_weight = sum(s.weight for s in self._scorers)
 
         for scorer in self._scorers:
             try:
                 raw = await scorer.score(
-                    case=case, result_output=output,
-                    tool_calls=[], cost_usd=cost_usd, steps=steps,
+                    case=case,
+                    result_output=output,
+                    tool_calls=[],
+                    cost_usd=cost_usd,
+                    steps=steps,
                 )
                 scores[scorer.name] = raw
             except Exception:
@@ -223,7 +221,7 @@ class EvalSuite:
     def assert_pass_rate(
         self,
         threshold: float,
-        run: Optional[EvalRunResult] = None,
+        run: EvalRunResult | None = None,
     ) -> None:
         """
         Raise AssertionError if pass rate is below threshold.
@@ -243,7 +241,7 @@ class EvalSuite:
     # History and persistence
     # ------------------------------------------------------------------
 
-    def compare(self, run_a: EvalRunResult, run_b: EvalRunResult) -> Dict[str, Any]:
+    def compare(self, run_a: EvalRunResult, run_b: EvalRunResult) -> dict[str, Any]:
         """Compare two eval runs and return diff."""
         diffs = {}
         for case_name in set(run_a.scores_by_case) | set(run_b.scores_by_case):
@@ -257,7 +255,7 @@ class EvalSuite:
             "case_diffs": diffs,
         }
 
-    def load_result(self, run_id: str) -> Optional[EvalRunResult]:
+    def load_result(self, run_id: str) -> EvalRunResult | None:
         path = self._results_dir / f"{run_id}.json"
         if not path.exists():
             return None

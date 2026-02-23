@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from helix.config import TeamConfig
 from helix.core.agent import Agent, AgentResult
@@ -24,10 +24,10 @@ from helix.core.agent import Agent, AgentResult
 class TeamResult:
     team_name: str
     final_output: Any
-    agent_results: List[AgentResult] = field(default_factory=list)
+    agent_results: list[AgentResult] = field(default_factory=list)
     total_cost_usd: float = 0.0
     duration_s: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class Team:
@@ -48,12 +48,12 @@ class Team:
     def __init__(
         self,
         name: str,
-        agents: List[Agent],
+        agents: list[Agent],
         strategy: str = "sequential",
-        lead: Optional[Agent] = None,
+        lead: Agent | None = None,
         shared_memory: bool = True,
-        budget_usd: Optional[float] = None,
-        config: Optional[TeamConfig] = None,
+        budget_usd: float | None = None,
+        config: TeamConfig | None = None,
     ) -> None:
         self._name = name
         self._agents = agents
@@ -88,11 +88,11 @@ class Team:
     def run_sync(self, task: str) -> TeamResult:
         return asyncio.run(self.run(task))
 
-    def add_agent(self, agent: Agent) -> "Team":
+    def add_agent(self, agent: Agent) -> Team:
         self._agents.append(agent)
         return self
 
-    def remove_agent(self, name: str) -> "Team":
+    def remove_agent(self, name: str) -> Team:
         self._agents = [a for a in self._agents if a.name != name]
         return self
 
@@ -102,7 +102,7 @@ class Team:
 
     async def _run_sequential(self, task: str, start: float) -> TeamResult:
         """Each agent receives the previous agent's output as its input."""
-        results: List[AgentResult] = []
+        results: list[AgentResult] = []
         current_input = task
 
         for agent in self._agents:
@@ -122,7 +122,7 @@ class Team:
     async def _run_parallel(self, task: str, start: float) -> TeamResult:
         """All agents run on the same input concurrently. Outputs returned as list."""
         coroutines = [agent.run(task) for agent in self._agents]
-        results: List[AgentResult] = await asyncio.gather(*coroutines, return_exceptions=False)
+        results: list[AgentResult] = await asyncio.gather(*coroutines, return_exceptions=False)
 
         total_cost = sum(r.cost_usd for r in results)
         outputs = [str(r.output) for r in results]
@@ -153,7 +153,9 @@ class Team:
         lead_result = await self._lead.run(decompose_prompt)
 
         # Parse subtasks
-        import json, re
+        import json
+        import re
+
         subtasks = []
         try:
             raw = str(lead_result.output)
@@ -165,8 +167,8 @@ class Team:
 
         # Dispatch subtasks to specialists
         agent_map = {a.name: a for a in self._agents}
-        results: List[AgentResult] = [lead_result]
-        outputs: List[str] = []
+        results: list[AgentResult] = [lead_result]
+        outputs: list[str] = []
 
         dispatch_coros = []
         for st in subtasks:

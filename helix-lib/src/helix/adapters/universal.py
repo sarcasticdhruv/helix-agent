@@ -52,19 +52,31 @@ class HelixLLMShim:
     """
 
     # Method names across all major LLM libraries that trigger completions
-    _COMPLETION_METHODS = frozenset([
-        # OpenAI SDK
-        "create",
-        # LangChain
-        "invoke", "ainvoke", "generate", "agenerate",
-        "predict", "apredict", "_call", "_acall",
-        # AutoGen
-        "generate_reply", "a_generate_reply",
-        # Anthropic
-        "messages",
-        # Generic
-        "complete", "acomplete", "chat", "achat",
-    ])
+    _COMPLETION_METHODS = frozenset(
+        [
+            # OpenAI SDK
+            "create",
+            # LangChain
+            "invoke",
+            "ainvoke",
+            "generate",
+            "agenerate",
+            "predict",
+            "apredict",
+            "_call",
+            "_acall",
+            # AutoGen
+            "generate_reply",
+            "a_generate_reply",
+            # Anthropic
+            "messages",
+            # Generic
+            "complete",
+            "acomplete",
+            "chat",
+            "achat",
+        ]
+    )
 
     def __init__(
         self,
@@ -129,6 +141,7 @@ class HelixLLMShim:
                 ):
                     # Best effort: check synchronously
                     from helix.errors import BudgetExceededError
+
                     raise BudgetExceededError(
                         agent_id=shim._context.config.agent_id,
                         budget_usd=shim._context.cost.budget_usd,
@@ -286,9 +299,7 @@ def from_crewai(
         for agent in crew.agents:
             if hasattr(agent, "llm") and agent.llm is not None:
                 model_name = _guess_model_name(agent.llm)
-                agent.llm = HelixLLMShim(
-                    underlying=agent.llm, context=ctx, model_name=model_name
-                )
+                agent.llm = HelixLLMShim(underlying=agent.llm, context=ctx, model_name=model_name)
     except Exception as e:
         raise ValueError(f"Failed to patch CrewAI agents: {e}") from e
 
@@ -315,6 +326,7 @@ class CrewAIWrapper:
             return result
         except Exception as e:
             from helix.errors import AdapterError
+
             raise AdapterError(framework="crewai", reason=str(e)) from e
 
     @property
@@ -381,11 +393,10 @@ class LangChainWrapper:
             if asyncio.iscoroutinefunction(getattr(self._chain, "ainvoke", None)):
                 return await self._chain.ainvoke(input)
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, lambda: self._chain.invoke(input)
-            )
+            return await loop.run_in_executor(None, lambda: self._chain.invoke(input))
         except Exception as e:
             from helix.errors import AdapterError
+
             raise AdapterError(framework="langchain", reason=str(e)) from e
 
     @property
@@ -425,9 +436,7 @@ def _patch_autogen_agent(agent: Any, ctx: ExecutionContext) -> None:
     # AutoGen ConversableAgent has a client attribute or llm_config
     if hasattr(agent, "client") and agent.client is not None:
         model_name = "autogen"
-        agent.client = HelixLLMShim(
-            underlying=agent.client, context=ctx, model_name=model_name
-        )
+        agent.client = HelixLLMShim(underlying=agent.client, context=ctx, model_name=model_name)
 
 
 class AutoGenWrapper:
@@ -445,6 +454,7 @@ class AutoGenWrapper:
                 # Create a minimal human proxy for initiation
                 try:
                     from autogen import UserProxyAgent
+
                     sender = UserProxyAgent(name="helix_proxy", human_input_mode="NEVER")
                 except ImportError:
                     pass
@@ -457,13 +467,15 @@ class AutoGenWrapper:
             else:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
-                    None, lambda: self._agent.generate_reply(
+                    None,
+                    lambda: self._agent.generate_reply(
                         messages=[{"role": "user", "content": message}]
-                    )
+                    ),
                 )
             return result
         except Exception as e:
             from helix.errors import AdapterError
+
             raise AdapterError(framework="autogen", reason=str(e)) from e
 
     @property

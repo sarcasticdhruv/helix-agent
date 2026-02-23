@@ -11,10 +11,8 @@ response time from ~850ms to <120ms on cache hits.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import time
-import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from helix.config import CacheConfig, CacheEntry, CacheHit
 from helix.interfaces import CacheBackend, EmbeddingProvider
@@ -24,25 +22,25 @@ class InMemoryCacheBackend(CacheBackend):
     """Default in-process cache backend. No external dependencies."""
 
     def __init__(self) -> None:
-        self._store: Dict[str, CacheEntry] = {}
+        self._store: dict[str, CacheEntry] = {}
         self._lock = asyncio.Lock()
 
     async def upsert(self, entry: CacheEntry, ttl_seconds: int) -> None:
         async with self._lock:
             entry_with_expiry = entry.model_copy(update={"age_s": 0.0})
             self._store[entry.id] = entry_with_expiry
-            self._expiry: Dict[str, float] = getattr(self, "_expiry", {})
+            self._expiry: dict[str, float] = getattr(self, "_expiry", {})
             self._expiry[entry.id] = time.time() + ttl_seconds
 
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         threshold: float,
-    ) -> Optional[CacheEntry]:
+    ) -> CacheEntry | None:
         async with self._lock:
             self._evict_expired()
-            best: Optional[CacheEntry] = None
-            best_score = -1.0   # Must be < any valid score so 0.0 >= threshold wins
+            best: CacheEntry | None = None
+            best_score = -1.0  # Must be < any valid score so 0.0 >= threshold wins
             for entry in self._store.values():
                 score = _cosine_similarity(query_embedding, entry.query_embedding)
                 if score >= threshold and score > best_score:
@@ -64,7 +62,7 @@ class InMemoryCacheBackend(CacheBackend):
             self._expiry = {}
             return count
 
-    async def stats(self) -> Dict[str, Any]:
+    async def stats(self) -> dict[str, Any]:
         return {"size": len(self._store), "backend": "inmemory"}
 
     async def health(self) -> bool:
@@ -79,11 +77,12 @@ class InMemoryCacheBackend(CacheBackend):
             expiry.pop(k, None)
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     import math
-    dot = sum(x * y for x, y in zip(a, b))
+
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -105,8 +104,8 @@ class SemanticCache:
     def __init__(
         self,
         config: CacheConfig,
-        backend: Optional[CacheBackend] = None,
-        embedder: Optional[EmbeddingProvider] = None,
+        backend: CacheBackend | None = None,
+        embedder: EmbeddingProvider | None = None,
     ) -> None:
         self._config = config
         self._backend = backend or InMemoryCacheBackend()
@@ -115,14 +114,15 @@ class SemanticCache:
         self._misses = 0
         self._total_saved_usd = 0.0
 
-    async def initialize(self, embedder: Optional[EmbeddingProvider] = None) -> None:
+    async def initialize(self, embedder: EmbeddingProvider | None = None) -> None:
         if embedder:
             self._embedder = embedder
         if self._embedder is None:
             from helix.models.embedder import OpenAIEmbedder
+
             self._embedder = OpenAIEmbedder()
 
-    async def get(self, query: str, context_hash: str) -> Optional[CacheHit]:
+    async def get(self, query: str, context_hash: str) -> CacheHit | None:
         """
         Look up a cached response.
         Returns CacheHit if a semantically similar query exists with
@@ -185,7 +185,7 @@ class SemanticCache:
     async def clear(self) -> int:
         return await self._backend.flush()
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         total = self._hits + self._misses
         return {
             "hits": self._hits,

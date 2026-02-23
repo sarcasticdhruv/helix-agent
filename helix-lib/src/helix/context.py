@@ -20,17 +20,14 @@ import hashlib
 import json
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from helix.config import (
     AgentConfig,
-    AuditEventType,
     BudgetStrategy,
     ContextMessage,
     ContextMessageRole,
-    ModelResponse,
     MemoryEntry,
-    TokenUsage,
     ToolCallRecord,
 )
 
@@ -41,7 +38,7 @@ class CostLedger:
     protected by an asyncio Lock for concurrent safety.
     """
 
-    def __init__(self, budget_usd: Optional[float]) -> None:
+    def __init__(self, budget_usd: float | None) -> None:
         self._budget_usd = budget_usd
         self._spent_usd: float = 0.0
         self._calls: int = 0
@@ -75,11 +72,11 @@ class CostLedger:
         return self._spent_usd
 
     @property
-    def budget_usd(self) -> Optional[float]:
+    def budget_usd(self) -> float | None:
         return self._budget_usd
 
     @property
-    def budget_pct(self) -> Optional[float]:
+    def budget_pct(self) -> float | None:
         if self._budget_usd is None or self._budget_usd == 0:
             return None
         return self._spent_usd / self._budget_usd
@@ -88,7 +85,7 @@ class CostLedger:
     def calls(self) -> int:
         return self._calls
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "spent_usd": self._spent_usd,
             "budget_usd": self._budget_usd,
@@ -109,7 +106,7 @@ class ContextWindow:
     """
 
     def __init__(self, limit_tokens: int) -> None:
-        self._messages: List[ContextMessage] = []
+        self._messages: list[ContextMessage] = []
         self._limit_tokens = limit_tokens
         self._step = 0
         self._lock = asyncio.Lock()
@@ -120,11 +117,13 @@ class ContextWindow:
             self._messages.append(message)
 
     async def add_system(self, content: str, pinned: bool = True) -> None:
-        await self.add(ContextMessage(
-            role=ContextMessageRole.SYSTEM,
-            content=content,
-            pinned=pinned,
-        ))
+        await self.add(
+            ContextMessage(
+                role=ContextMessageRole.SYSTEM,
+                content=content,
+                pinned=pinned,
+            )
+        )
 
     async def add_user(self, content: str) -> None:
         await self.add(ContextMessage(role=ContextMessageRole.USER, content=content))
@@ -133,11 +132,13 @@ class ContextWindow:
         await self.add(ContextMessage(role=ContextMessageRole.ASSISTANT, content=content))
 
     async def add_tool_result(self, tool_name: str, content: str) -> None:
-        await self.add(ContextMessage(
-            role=ContextMessageRole.TOOL,
-            content=content,
-            tool_name=tool_name,
-        ))
+        await self.add(
+            ContextMessage(
+                role=ContextMessageRole.TOOL,
+                content=content,
+                tool_name=tool_name,
+            )
+        )
 
     async def inject_step_output(self, step: int, output: Any) -> None:
         """Used by FailureReplay to override a step's output in context."""
@@ -159,11 +160,11 @@ class ContextWindow:
     def step(self) -> int:
         return self._step
 
-    def messages(self) -> List[ContextMessage]:
+    def messages(self) -> list[ContextMessage]:
         """Return a snapshot of the current message list (sorted by step)."""
         return list(self._messages)
 
-    def as_llm_messages(self) -> List[Dict[str, Any]]:
+    def as_llm_messages(self) -> list[dict[str, Any]]:
         """
         Convert to the list[dict] format expected by LLM providers.
         Tool messages are mapped to the provider-agnostic format here;
@@ -172,11 +173,13 @@ class ContextWindow:
         result = []
         for msg in self._messages:
             if msg.role == ContextMessageRole.TOOL:
-                result.append({
-                    "role": "tool",
-                    "content": msg.content,
-                    "tool_name": msg.tool_name or "",
-                })
+                result.append(
+                    {
+                        "role": "tool",
+                        "content": msg.content,
+                        "tool_name": msg.tool_name or "",
+                    }
+                )
             else:
                 result.append({"role": msg.role.value, "content": msg.content})
         return result
@@ -211,28 +214,27 @@ class ContextWindow:
     def evict_below_relevance(self, threshold: float = 0.2) -> int:
         """Remove non-pinned messages with relevance below threshold."""
         before = len(self._messages)
-        self._messages = [
-            m for m in self._messages
-            if m.pinned or m.relevance >= threshold
-        ]
+        self._messages = [m for m in self._messages if m.pinned or m.relevance >= threshold]
         return before - len(self._messages)
 
     def replace_with_summary(
         self,
-        to_replace: List[str],  # message ids
+        to_replace: list[str],  # message ids
         summary_content: str,
     ) -> None:
         """Replace a group of messages with a single summary message."""
         ids = set(to_replace)
         self._messages = [m for m in self._messages if m.id not in ids]
-        self._messages.append(ContextMessage(
-            role=ContextMessageRole.SYSTEM,
-            content=f"[CONTEXT SUMMARY] {summary_content}",
-            pinned=False,
-            relevance=0.9,
-        ))
+        self._messages.append(
+            ContextMessage(
+                role=ContextMessageRole.SYSTEM,
+                content=f"[CONTEXT SUMMARY] {summary_content}",
+                pinned=False,
+                relevance=0.9,
+            )
+        )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "step": self._step,
             "limit_tokens": self._limit_tokens,
@@ -240,7 +242,7 @@ class ContextWindow:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ContextWindow":
+    def from_dict(cls, data: dict[str, Any]) -> ContextWindow:
         obj = cls(limit_tokens=data["limit_tokens"])
         obj._step = data["step"]
         obj._messages = [ContextMessage(**m) for m in data["messages"]]
@@ -255,13 +257,11 @@ class LoopGuard:
 
     def __init__(self, limit: int) -> None:
         self._limit = limit
-        self._tool_call_history: List[Tuple[str, str]] = []  # (name, args_hash)
-        self._output_history: List[str] = []
+        self._tool_call_history: list[tuple[str, str]] = []  # (name, args_hash)
+        self._output_history: list[str] = []
 
-    def record_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> None:
-        args_hash = hashlib.md5(
-            json.dumps(arguments, sort_keys=True).encode()
-        ).hexdigest()[:8]
+    def record_tool_call(self, tool_name: str, arguments: dict[str, Any]) -> None:
+        args_hash = hashlib.md5(json.dumps(arguments, sort_keys=True).encode()).hexdigest()[:8]
         self._tool_call_history.append((tool_name, args_hash))
 
     def record_output(self, output: str) -> None:
@@ -316,42 +316,40 @@ class ExecutionContext:
     def __init__(
         self,
         config: AgentConfig,
-        run_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        parent_run_id: Optional[str] = None,
+        run_id: str | None = None,
+        session_id: str | None = None,
+        parent_run_id: str | None = None,
     ) -> None:
         self.run_id: str = run_id or str(uuid.uuid4())
-        self.session_id: Optional[str] = session_id
-        self.parent_run_id: Optional[str] = parent_run_id
+        self.session_id: str | None = session_id
+        self.parent_run_id: str | None = parent_run_id
         self.config: AgentConfig = config
         self.started_at: float = time.time()
 
         # Sub-components
         self.window = ContextWindow(limit_tokens=config.context_limit_tokens)
-        self.cost = CostLedger(
-            budget_usd=config.budget.budget_usd if config.budget else None
-        )
+        self.cost = CostLedger(budget_usd=config.budget.budget_usd if config.budget else None)
         self.loop_guard = LoopGuard(limit=config.loop_limit)
 
         # Accumulated outputs
-        self.tool_calls: List[ToolCallRecord] = []
-        self.step_outputs: Dict[int, Any] = {}
-        self.final_output: Optional[str] = None
-        self.error: Optional[Exception] = None
+        self.tool_calls: list[ToolCallRecord] = []
+        self.step_outputs: dict[int, Any] = {}
+        self.final_output: str | None = None
+        self.error: Exception | None = None
 
         # HITL state
         self.hitl_pending: bool = False
-        self.hitl_request_id: Optional[str] = None
+        self.hitl_request_id: str | None = None
 
         # Memory entries retrieved for this run (for tracing)
-        self.recalled_memories: List[MemoryEntry] = []
+        self.recalled_memories: list[MemoryEntry] = []
 
         # Cache stats for this run
         self.cache_hits: int = 0
         self.cache_savings_usd: float = 0.0
 
         # Model used per step (may change with degradation)
-        self.model_per_step: List[str] = []
+        self.model_per_step: list[str] = []
 
     # ------------------------------------------------------------------
     # Convenience methods
@@ -400,7 +398,7 @@ class ExecutionContext:
     # Serialization (for checkpointing and replay)
     # ------------------------------------------------------------------
 
-    def to_checkpoint(self) -> Dict[str, Any]:
+    def to_checkpoint(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "session_id": self.session_id,
@@ -421,9 +419,9 @@ class ExecutionContext:
     @classmethod
     def from_checkpoint(
         cls,
-        checkpoint: Dict[str, Any],
+        checkpoint: dict[str, Any],
         config: AgentConfig,
-    ) -> "ExecutionContext":
+    ) -> ExecutionContext:
         ctx = cls(
             config=config,
             run_id=checkpoint["run_id"],
@@ -445,7 +443,7 @@ class ExecutionContext:
     # Summary for tracing
     # ------------------------------------------------------------------
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "agent_id": self.config.agent_id,

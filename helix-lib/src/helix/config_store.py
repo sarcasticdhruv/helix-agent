@@ -18,8 +18,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
-
 
 # Where helix stores its config
 _CONFIG_DIR = Path.home() / ".helix"
@@ -27,17 +25,24 @@ _CONFIG_FILE = _CONFIG_DIR / "config.json"
 
 # Keys that should be masked in output
 _SENSITIVE_KEYS = {
-    "GOOGLE_API_KEY", "GEMINI_API_KEY",
-    "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-    "GROQ_API_KEY", "MISTRAL_API_KEY", "COHERE_API_KEY",
-    "TOGETHER_API_KEY", "OPENROUTER_API_KEY",
-    "DEEPSEEK_API_KEY", "XAI_API_KEY",
-    "PERPLEXITY_API_KEY", "FIREWORKS_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GROQ_API_KEY",
+    "MISTRAL_API_KEY",
+    "COHERE_API_KEY",
+    "TOGETHER_API_KEY",
+    "OPENROUTER_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "XAI_API_KEY",
+    "PERPLEXITY_API_KEY",
+    "FIREWORKS_API_KEY",
     "AZURE_OPENAI_API_KEY",
 }
 
 
-def _load_config() -> Dict[str, str]:
+def _load_config() -> dict[str, str]:
     """Load saved config from ~/.helix/config.json."""
     if not _CONFIG_FILE.exists():
         return {}
@@ -47,7 +52,7 @@ def _load_config() -> Dict[str, str]:
         return {}
 
 
-def _save_config(data: Dict[str, str]) -> None:
+def _save_config(data: dict[str, str]) -> None:
     """Save config to ~/.helix/config.json."""
     _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -56,7 +61,7 @@ def _save_config(data: Dict[str, str]) -> None:
         _CONFIG_FILE.chmod(0o600)
 
 
-def _load_dotenv(path: Optional[Path] = None) -> Dict[str, str]:
+def _load_dotenv(path: Path | None = None) -> dict[str, str]:
     """
     Parse a .env file. Returns dict of key=value pairs.
     Does not require python-dotenv — we parse it ourselves.
@@ -64,7 +69,7 @@ def _load_dotenv(path: Optional[Path] = None) -> Dict[str, str]:
     env_file = path or (Path.cwd() / ".env")
     if not env_file.exists():
         return {}
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -112,7 +117,7 @@ def set_key(name: str, value: str) -> None:
     os.environ[name] = value
 
 
-def get_key(name: str) -> Optional[str]:
+def get_key(name: str) -> str | None:
     """Get a key — checks env first, then saved config."""
     return os.environ.get(name) or _load_config().get(name)
 
@@ -128,12 +133,12 @@ def delete_key(name: str) -> bool:
     return False
 
 
-def list_keys() -> Dict[str, str]:
+def list_keys() -> dict[str, str]:
     """
     List all saved keys with values masked.
     Also shows keys set via environment variables.
     """
-    result: Dict[str, str] = {}
+    result: dict[str, str] = {}
     saved = _load_config()
 
     # Show all known provider keys
@@ -163,18 +168,18 @@ def config_path() -> Path:
 
 # Priority-ordered list: (env_var_or_vars, model_name)
 _PROVIDER_MODEL_PRIORITY = [
-    (["OPENAI_API_KEY"],                   "gpt-4o-mini"),
-    (["ANTHROPIC_API_KEY"],                "claude-haiku-4-5-20251001"),
+    (["OPENAI_API_KEY"], "gpt-4o-mini"),
+    (["ANTHROPIC_API_KEY"], "claude-haiku-4-5-20251001"),
     (["GOOGLE_API_KEY", "GEMINI_API_KEY"], "models/gemini-2.5-flash"),
-    (["GROQ_API_KEY"],                     "llama-3.3-70b-versatile"),
-    (["MISTRAL_API_KEY"],                  "mistral-small-latest"),
-    (["TOGETHER_API_KEY"],                 "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
-    (["COHERE_API_KEY"],                   "command-r-08-2024"),
-    (["OPENROUTER_API_KEY"],               "openrouter/openai/gpt-4o-mini"),
-    (["DEEPSEEK_API_KEY"],                 "deepseek-chat"),
-    (["XAI_API_KEY"],                      "grok-2-latest"),
-    (["PERPLEXITY_API_KEY"],               "llama-3.1-sonar-small-128k-online"),
-    (["FIREWORKS_API_KEY"],                "accounts/fireworks/models/llama-v3p1-8b-instruct"),
+    (["GROQ_API_KEY"], "llama-3.3-70b-versatile"),
+    (["MISTRAL_API_KEY"], "mistral-small-latest"),
+    (["TOGETHER_API_KEY"], "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"),
+    (["COHERE_API_KEY"], "command-r-08-2024"),
+    (["OPENROUTER_API_KEY"], "openrouter/openai/gpt-4o-mini"),
+    (["DEEPSEEK_API_KEY"], "deepseek-chat"),
+    (["XAI_API_KEY"], "grok-2-latest"),
+    (["PERPLEXITY_API_KEY"], "llama-3.1-sonar-small-128k-online"),
+    (["FIREWORKS_API_KEY"], "accounts/fireworks/models/llama-v3p1-8b-instruct"),
 ]
 
 

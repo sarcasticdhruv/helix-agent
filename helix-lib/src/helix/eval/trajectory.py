@@ -8,9 +8,7 @@ Evaluates: tool sequence accuracy, efficiency, and loop detection.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
-from helix.config import EvalCase, ExpectedTrajectory, ToolCallRecord
+from helix.config import EvalCase, ToolCallRecord
 from helix.interfaces import EvalScorer
 
 
@@ -35,7 +33,7 @@ class TrajectoryScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -74,7 +72,7 @@ class TrajectoryScorer(EvalScorer):
 
         return max(0.0, (score / components) - loop_penalty)
 
-    def _sequence_match(self, actual: List[str], expected: List[str]) -> float:
+    def _sequence_match(self, actual: list[str], expected: list[str]) -> float:
         """
         Longest common subsequence ratio.
         Allows extra steps but rewards hitting expected steps in order.

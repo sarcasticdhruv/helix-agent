@@ -13,33 +13,32 @@ Responsibilities:
 from __future__ import annotations
 
 import math
-from typing import Any, List, Optional
+from typing import Any
 
 from helix.config import AgentConfig, ContextMessage, ContextMessageRole
-from helix.context import ContextWindow, ExecutionContext
+from helix.context import ExecutionContext
 from helix.context_engine.compactor import IntelligentCompactor
 from helix.context_engine.preflight import PreflightEstimate, PreflightEstimator
 
-
 # Default decay weights (configurable per-agent in future)
-_ALPHA = 0.3   # Time decay weight
-_BETA  = 0.4   # Reference score weight
-_GAMMA = 0.2   # Semantic similarity weight
-_DELTA = 0.1   # Role weight
+_ALPHA = 0.3  # Time decay weight
+_BETA = 0.4  # Reference score weight
+_GAMMA = 0.2  # Semantic similarity weight
+_DELTA = 0.1  # Role weight
 
 # Role base weights
 _ROLE_WEIGHTS = {
-    ContextMessageRole.SYSTEM:    1.0,
-    ContextMessageRole.TOOL:      0.8,
-    ContextMessageRole.USER:      0.7,
+    ContextMessageRole.SYSTEM: 1.0,
+    ContextMessageRole.TOOL: 0.8,
+    ContextMessageRole.USER: 0.7,
     ContextMessageRole.ASSISTANT: 0.5,
 }
 
 # Lambda for exponential decay (larger = faster decay)
 _LAMBDA_BY_ROLE = {
-    ContextMessageRole.SYSTEM:    0.01,  # Slow decay — system context stays relevant
-    ContextMessageRole.TOOL:      0.05,  # Medium — tool results decay faster
-    ContextMessageRole.USER:      0.03,
+    ContextMessageRole.SYSTEM: 0.01,  # Slow decay — system context stays relevant
+    ContextMessageRole.TOOL: 0.05,  # Medium — tool results decay faster
+    ContextMessageRole.USER: 0.03,
     ContextMessageRole.ASSISTANT: 0.08,  # Fast — intermediate reasoning decays quickest
 }
 
@@ -95,7 +94,7 @@ class ContextEngine:
         self,
         ctx: ExecutionContext,
         last_response: str,
-        embedder: Optional[Any] = None,
+        embedder: Any | None = None,
     ) -> None:
         """
         Update relevance scores for all messages in the context window.
@@ -129,7 +128,7 @@ class ContextEngine:
 
     def _detect_references(
         self,
-        messages: List[ContextMessage],
+        messages: list[ContextMessage],
         response: str,
     ) -> set:
         """
@@ -144,10 +143,7 @@ class ContextEngine:
             if msg.role == ContextMessageRole.SYSTEM:
                 continue
             # Extract meaningful words (length > 5, not common words)
-            words = [
-                w for w in msg.content.lower().split()
-                if len(w) > 5 and w.isalpha()
-            ]
+            words = [w for w in msg.content.lower().split() if len(w) > 5 and w.isalpha()]
             # If 2+ significant words appear in the response, consider it referenced
             hits = sum(1 for w in words[:20] if w in response_lower)
             if hits >= 2:
@@ -158,8 +154,8 @@ class ContextEngine:
     async def compact(
         self,
         ctx: ExecutionContext,
-        embedder: Optional[Any] = None,
-        llm_router: Optional[Any] = None,
+        embedder: Any | None = None,
+        llm_router: Any | None = None,
     ) -> None:
         """
         Compact the context window when approaching the token limit.
@@ -178,7 +174,7 @@ class ContextEngine:
         self,
         task: str,
         system_prompt: str = "",
-        similar_episodes: Optional[list] = None,
+        similar_episodes: list | None = None,
     ) -> PreflightEstimate:
         """Estimate cost before the run starts."""
         return self._preflight.estimate(

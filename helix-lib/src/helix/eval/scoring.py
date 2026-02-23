@@ -9,8 +9,6 @@ LLM-as-judge scorers: factual accuracy, quality.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
-
 from helix.config import EvalCase, ToolCallRecord
 from helix.interfaces import EvalScorer
 
@@ -30,7 +28,7 @@ class ToolSelectionScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -59,7 +57,7 @@ class CostScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -86,7 +84,7 @@ class StepScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -118,7 +116,7 @@ class FactScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
@@ -127,10 +125,7 @@ class FactScorer(EvalScorer):
 
         # Simple containment check first (fast path)
         output_lower = result_output.lower()
-        hits = sum(
-            1 for fact in case.expected_facts
-            if fact.lower() in output_lower
-        )
+        hits = sum(1 for fact in case.expected_facts if fact.lower() in output_lower)
         simple_score = hits / len(case.expected_facts)
 
         # If score is already 1.0, skip LLM judge
@@ -140,6 +135,7 @@ class FactScorer(EvalScorer):
         # LLM judge for semantic fact verification
         try:
             from helix.models.router import ModelRouter
+
             router = ModelRouter(primary_model=self._judge_model)
             facts_str = "\n".join(f"- {f}" for f in case.expected_facts)
             prompt = (
@@ -182,12 +178,13 @@ class QualityScorer(EvalScorer):
         self,
         case: EvalCase,
         result_output: str,
-        tool_calls: List[ToolCallRecord],
+        tool_calls: list[ToolCallRecord],
         cost_usd: float,
         steps: int,
     ) -> float:
         try:
             from helix.models.router import ModelRouter
+
             router = ModelRouter(primary_model=self._judge_model)
             prompt = (
                 f"Rate the quality of this response to the question on a scale of 0.0 to 1.0. "
@@ -210,7 +207,7 @@ class QualityScorer(EvalScorer):
 
 
 # Default scorer set used by EvalSuite
-DEFAULT_SCORERS: List[EvalScorer] = [
+DEFAULT_SCORERS: list[EvalScorer] = [
     ToolSelectionScorer(),
     CostScorer(),
     StepScorer(),

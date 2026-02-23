@@ -14,18 +14,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
 class StepSnapshot:
     step: int
     name: str
-    input: Optional[Any]
-    output: Optional[Any]
-    duration_ms: Optional[float]
-    error: Optional[str]
-    cost_usd: Optional[float] = None
+    input: Any | None
+    output: Any | None
+    duration_ms: float | None
+    error: str | None
+    cost_usd: float | None = None
 
 
 class FailureReplay:
@@ -46,13 +46,13 @@ class FailureReplay:
         result = await replay.resume_from(3, agent)
     """
 
-    def __init__(self, trace: Dict[str, Any]) -> None:
+    def __init__(self, trace: dict[str, Any]) -> None:
         self._trace = trace
-        self._spans: List[Dict[str, Any]] = trace.get("spans", [])
-        self._overrides: Dict[int, Any] = {}
+        self._spans: list[dict[str, Any]] = trace.get("spans", [])
+        self._overrides: dict[int, Any] = {}
 
     @classmethod
-    def from_run_id(cls, run_id: str, trace_dir: str = ".helix/traces") -> "FailureReplay":
+    def from_run_id(cls, run_id: str, trace_dir: str = ".helix/traces") -> FailureReplay:
         path = Path(trace_dir) / f"{run_id}.json"
         if not path.exists():
             raise FileNotFoundError(f"Trace not found: {path}")
@@ -60,15 +60,13 @@ class FailureReplay:
         return cls(trace)
 
     @classmethod
-    def from_trace(cls, trace: Dict[str, Any]) -> "FailureReplay":
+    def from_trace(cls, trace: dict[str, Any]) -> FailureReplay:
         return cls(trace)
 
     def inspect_step(self, step_n: int) -> StepSnapshot:
         """Return a snapshot of a specific step's state."""
         if step_n >= len(self._spans):
-            raise IndexError(
-                f"Step {step_n} out of range. Run has {len(self._spans)} spans."
-            )
+            raise IndexError(f"Step {step_n} out of range. Run has {len(self._spans)} spans.")
         span = self._spans[step_n]
         meta = span.get("meta", {})
         return StepSnapshot(
@@ -81,7 +79,7 @@ class FailureReplay:
             cost_usd=meta.get("cost_usd"),
         )
 
-    def inspect_all(self) -> List[StepSnapshot]:
+    def inspect_all(self) -> list[StepSnapshot]:
         """Return snapshots for all steps."""
         return [self.inspect_step(i) for i in range(len(self._spans))]
 

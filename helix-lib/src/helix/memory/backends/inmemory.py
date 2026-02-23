@@ -11,16 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import math
-from typing import Dict, List, Optional
 
 from helix.config import Episode, MemoryEntry
 from helix.interfaces import MemoryBackend
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     mag_a = math.sqrt(sum(x * x for x in a))
     mag_b = math.sqrt(sum(x * x for x in b))
     if mag_a == 0 or mag_b == 0:
@@ -35,9 +34,9 @@ class InMemoryBackend(MemoryBackend):
     """
 
     def __init__(self) -> None:
-        self._entries: Dict[str, MemoryEntry] = {}
-        self._episodes: Dict[str, Episode] = {}
-        self._shared: Dict[str, MemoryEntry] = {}  # key → entry (for team memory)
+        self._entries: dict[str, MemoryEntry] = {}
+        self._episodes: dict[str, Episode] = {}
+        self._shared: dict[str, MemoryEntry] = {}  # key → entry (for team memory)
         self._lock = asyncio.Lock()
 
     async def upsert(self, entry: MemoryEntry) -> None:
@@ -50,10 +49,10 @@ class InMemoryBackend(MemoryBackend):
 
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 5,
-        kind_filter: Optional[str] = None,
-    ) -> List[MemoryEntry]:
+        kind_filter: str | None = None,
+    ) -> list[MemoryEntry]:
         async with self._lock:
             candidates = list(self._entries.values())
 
@@ -63,10 +62,7 @@ class InMemoryBackend(MemoryBackend):
         if not query_embedding:
             return candidates[:top_k]
 
-        scored = [
-            (e, _cosine_similarity(query_embedding, e.embedding or []))
-            for e in candidates
-        ]
+        scored = [(e, _cosine_similarity(query_embedding, e.embedding or [])) for e in candidates]
         scored.sort(key=lambda x: x[1], reverse=True)
         return [e for e, _ in scored[:top_k]]
 
@@ -76,10 +72,10 @@ class InMemoryBackend(MemoryBackend):
 
     async def search_episodes(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 3,
-        outcome_filter: Optional[str] = None,
-    ) -> List[Episode]:
+        outcome_filter: str | None = None,
+    ) -> list[Episode]:
         async with self._lock:
             candidates = list(self._episodes.values())
 
@@ -90,8 +86,7 @@ class InMemoryBackend(MemoryBackend):
             return candidates[:top_k]
 
         scored = [
-            (e, _cosine_similarity(query_embedding, e.task_embedding or []))
-            for e in candidates
+            (e, _cosine_similarity(query_embedding, e.task_embedding or [])) for e in candidates
         ]
         scored.sort(key=lambda x: x[1], reverse=True)
         return [e for e, _ in scored[:top_k]]

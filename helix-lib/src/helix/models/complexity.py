@@ -8,7 +8,7 @@ No external calls. Pure computation from message content and tool list.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from helix.config import ComplexityTier
 
@@ -19,25 +19,55 @@ class ComplexityEstimator:
     """
 
     # Keywords that indicate higher complexity
-    _COMPLEX_KEYWORDS = frozenset([
-        "analyze", "analyse", "compare", "synthesize", "evaluate",
-        "calculate", "compute", "model", "optimize", "predict",
-        "research", "investigate", "design", "architect", "plan",
-        "multi-step", "step by step", "first", "then", "finally",
-        "if", "when", "unless", "otherwise",
-    ])
+    _COMPLEX_KEYWORDS = frozenset(
+        [
+            "analyze",
+            "analyse",
+            "compare",
+            "synthesize",
+            "evaluate",
+            "calculate",
+            "compute",
+            "model",
+            "optimize",
+            "predict",
+            "research",
+            "investigate",
+            "design",
+            "architect",
+            "plan",
+            "multi-step",
+            "step by step",
+            "first",
+            "then",
+            "finally",
+            "if",
+            "when",
+            "unless",
+            "otherwise",
+        ]
+    )
 
-    _SIMPLE_KEYWORDS = frozenset([
-        "what is", "define", "summarize", "list", "translate",
-        "format", "convert", "extract", "find",
-    ])
+    _SIMPLE_KEYWORDS = frozenset(
+        [
+            "what is",
+            "define",
+            "summarize",
+            "list",
+            "translate",
+            "format",
+            "convert",
+            "extract",
+            "find",
+        ]
+    )
 
     @classmethod
     def estimate(
         cls,
-        messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]],
-        hint: Optional[str] = None,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        hint: str | None = None,
     ) -> ComplexityTier:
         """
         Score the task and return a ComplexityTier.
@@ -83,16 +113,12 @@ class ComplexityEstimator:
         score -= min(simple_hits * 0.5, 1.0)
 
         # Multi-step indicators
-        multi_step = any(
-            kw in text for kw in ("step 1", "first,", "then ", "finally,", "next,")
-        )
+        multi_step = any(kw in text for kw in ("step 1", "first,", "then ", "finally,", "next,"))
         if multi_step:
             score += 1.0
 
         # Math / analysis
-        math_hit = any(
-            kw in text for kw in ("calculate", "compute", "analyse", "analyze", "model")
-        )
+        math_hit = any(kw in text for kw in ("calculate", "compute", "analyse", "analyze", "model"))
         if math_hit:
             score += 1.0
 

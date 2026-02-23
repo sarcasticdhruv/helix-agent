@@ -12,8 +12,7 @@ Design rules:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Root
@@ -30,10 +29,10 @@ class HelixError(Exception):
 
     status_code: int = 500
 
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.message = message
-        self.details: Dict[str, Any] = details or {}
+        self.details: dict[str, Any] = details or {}
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"{type(self).__name__}({self.message!r}, details={self.details})"
@@ -112,7 +111,7 @@ class ToolError(HelixError):
         self,
         tool_name: str,
         message: str,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message=message, details={"tool_name": tool_name, **(details or {})})
         self.tool_name = tool_name
@@ -162,7 +161,7 @@ class ToolRateLimitError(ToolError):
 
     status_code = 429
 
-    def __init__(self, tool_name: str, retry_after_s: Optional[float] = None) -> None:
+    def __init__(self, tool_name: str, retry_after_s: float | None = None) -> None:
         super().__init__(
             tool_name=tool_name,
             message=f"Tool '{tool_name}' rate limited.",
@@ -208,10 +207,7 @@ class ToolHallucinatedError(ToolError):
     def __init__(self, tool_name: str, available_tools: list[str]) -> None:
         super().__init__(
             tool_name=tool_name,
-            message=(
-                f"Model called nonexistent tool '{tool_name}'. "
-                f"Available: {available_tools}"
-            ),
+            message=(f"Model called nonexistent tool '{tool_name}'. Available: {available_tools}"),
             details={"available_tools": available_tools},
         )
 
@@ -253,8 +249,7 @@ class ContextLimitError(HelixError):
     def __init__(self, agent_id: str, tokens: int, limit: int) -> None:
         super().__init__(
             message=(
-                f"Agent '{agent_id}' context window full: "
-                f"{tokens} tokens exceeds limit {limit}."
+                f"Agent '{agent_id}' context window full: {tokens} tokens exceeds limit {limit}."
             ),
             details={"agent_id": agent_id, "tokens": tokens, "limit": limit},
         )
@@ -306,12 +301,11 @@ class LoopDetectedError(HelixError):
         agent_id: str,
         signal: str,
         step_count: int,
-        details: Optional[Dict[str, Any]] = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             message=(
-                f"Agent '{agent_id}' loop detected (signal: {signal}) "
-                f"after {step_count} steps."
+                f"Agent '{agent_id}' loop detected (signal: {signal}) after {step_count} steps."
             ),
             details={
                 "agent_id": agent_id,
@@ -343,8 +337,8 @@ class HelixProviderError(HelixError):
         self,
         provider: str,
         model: str,
-        reason: Optional[str] = None,
-        original: Optional[Exception] = None,
+        reason: str | None = None,
+        original: Exception | None = None,
         status_code: int = 502,
         retryable: bool = False,
     ) -> None:
@@ -382,7 +376,7 @@ class ModelNotFoundError(HelixProviderError):
 class AllModelsExhaustedError(HelixError):
     """All models in the fallback chain failed."""
 
-    def __init__(self, attempted: list[str], errors: Optional[Dict[str, str]] = None) -> None:
+    def __init__(self, attempted: list[str], errors: dict[str, str] | None = None) -> None:
         if errors:
             error_lines = "; ".join(f"{m}: {e}" for m, e in errors.items())
             message = f"All models exhausted. Attempted: {attempted}. Errors: {error_lines}"
@@ -439,7 +433,7 @@ class SafetyViolationError(HelixError):
 
     status_code = 451
 
-    def __init__(self, agent_id: str, violation_type: str, details: Dict[str, Any]) -> None:
+    def __init__(self, agent_id: str, violation_type: str, details: dict[str, Any]) -> None:
         super().__init__(
             message=f"Safety violation by agent '{agent_id}': {violation_type}",
             details={"agent_id": agent_id, "violation_type": violation_type, **details},
@@ -502,10 +496,7 @@ class EvalRegressionError(HelixError):
 
     def __init__(self, regressions: list[dict]) -> None:
         super().__init__(
-            message=(
-                f"{len(regressions)} eval regression(s) detected. "
-                "Deployment blocked."
-            ),
+            message=(f"{len(regressions)} eval regression(s) detected. Deployment blocked."),
             details={"regressions": regressions},
         )
         self.regressions = regressions
@@ -550,7 +541,7 @@ class HelixPromptNotFoundError(HelixError):
 
     status_code = 404
 
-    def __init__(self, prompt_id: str, version: Optional[str] = None) -> None:
+    def __init__(self, prompt_id: str, version: str | None = None) -> None:
         super().__init__(
             message=(
                 f"Prompt '{prompt_id}'"

@@ -9,8 +9,7 @@ OpenAI: prefix caching is automatic, no client-side changes needed.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
+from typing import Any
 
 _ANTHROPIC_MIN_TOKENS = 1024  # Minimum tokens to bother with cache_control
 
@@ -25,9 +24,9 @@ class PrefixCacheHook:
 
     def prepare(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         model: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Return a (possibly modified) message list with cache markers applied.
 
@@ -38,9 +37,7 @@ class PrefixCacheHook:
             return self._mark_anthropic(messages)
         return messages
 
-    def _mark_anthropic(
-        self, messages: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    def _mark_anthropic(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Add Anthropic cache_control breakpoints to system messages
         that are large enough to benefit from prefix caching.

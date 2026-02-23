@@ -12,24 +12,27 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import time
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator, Dict, Optional, Tuple
 
-from helix.config import AuditEntry, AuditEventType
+from helix.config import AuditEntry
 from helix.interfaces import AuditLogBackend
 
 
 def _hash_entry(entry: AuditEntry) -> str:
     """Produce a deterministic hash of an audit entry's content."""
-    canonical = json.dumps({
-        "id": entry.id,
-        "event_type": entry.event_type.value,
-        "agent_id": entry.agent_id,
-        "details": entry.details,
-        "timestamp": entry.timestamp,
-        "prev_hash": entry.prev_hash,
-    }, sort_keys=True, default=str)
+    canonical = json.dumps(
+        {
+            "id": entry.id,
+            "event_type": entry.event_type.value,
+            "agent_id": entry.agent_id,
+            "details": entry.details,
+            "timestamp": entry.timestamp,
+            "prev_hash": entry.prev_hash,
+        },
+        sort_keys=True,
+        default=str,
+    )
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
@@ -60,7 +63,7 @@ class LocalFileAuditLog(AuditLogBackend):
             return
         last_line = ""
         try:
-            with open(self._log_path, "r") as f:
+            with open(self._log_path) as f:
                 for line in f:
                     last_line = line.strip()
         except Exception:
@@ -89,13 +92,13 @@ class LocalFileAuditLog(AuditLogBackend):
 
     async def export(
         self,
-        since_timestamp: Optional[float] = None,
-        agent_id: Optional[str] = None,
+        since_timestamp: float | None = None,
+        agent_id: str | None = None,
     ) -> AsyncIterator[AuditEntry]:
         if not self._log_path.exists():
             return
 
-        with open(self._log_path, "r") as f:
+        with open(self._log_path) as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -111,13 +114,13 @@ class LocalFileAuditLog(AuditLogBackend):
                 except Exception:
                     continue
 
-    async def verify_chain(self) -> Tuple[bool, Optional[str]]:
+    async def verify_chain(self) -> tuple[bool, str | None]:
         """Walk the log file and verify each entry's prev_hash matches."""
         if not self._log_path.exists():
             return True, None
 
         prev_hash = ""
-        with open(self._log_path, "r") as f:
+        with open(self._log_path) as f:
             for line in f:
                 line = line.strip()
                 if not line:

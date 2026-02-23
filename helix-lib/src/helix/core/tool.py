@@ -17,22 +17,20 @@ from __future__ import annotations
 import asyncio
 import functools
 import inspect
-import json
 import time
-from typing import Any, Callable, Dict, List, Optional, Type
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel
 
-from helix.config import ToolCallRecord, FailureClass
+from helix.config import FailureClass, ToolCallRecord
 from helix.errors import (
     ToolError,
-    ToolNotFoundError,
     ToolPermissionError,
     ToolSchemaMismatchError,
     ToolTimeoutError,
 )
 from helix.interfaces import ToolProtocol
-
 
 # ---------------------------------------------------------------------------
 # Internal registered tool wrapper
@@ -52,9 +50,9 @@ class RegisteredTool(ToolProtocol):
         description: str,
         timeout_s: float,
         retries: int,
-        on_error: str,           # "raise" | "return_none" | "fallback"
-        fallback_fn: Optional[Callable],
-        parameters_schema: Dict[str, Any],
+        on_error: str,  # "raise" | "return_none" | "fallback"
+        fallback_fn: Callable | None,
+        parameters_schema: dict[str, Any],
     ) -> None:
         self._fn = fn
         self._name = name
@@ -75,11 +73,11 @@ class RegisteredTool(ToolProtocol):
         return self._description
 
     @property
-    def parameters_schema(self) -> Dict[str, Any]:
+    def parameters_schema(self) -> dict[str, Any]:
         return self._schema
 
     async def __call__(self, **kwargs: Any) -> Any:
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
 
         for attempt in range(self._retries + 1):
             try:
@@ -89,7 +87,7 @@ class RegisteredTool(ToolProtocol):
             except ToolError as e:
                 last_exc = e
                 if attempt < self._retries:
-                    await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+                    await asyncio.sleep(0.5 * (2**attempt))  # Exponential backoff
                     continue
                 break
 
@@ -107,7 +105,7 @@ class RegisteredTool(ToolProtocol):
             coro = self._fn(**kwargs)
             try:
                 return await asyncio.wait_for(coro, timeout=self._timeout_s)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s)
         else:
             try:
@@ -116,10 +114,10 @@ class RegisteredTool(ToolProtocol):
                     loop.run_in_executor(None, functools.partial(self._fn, **kwargs)),
                     timeout=self._timeout_s,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise ToolTimeoutError(tool_name=self._name, timeout_s=self._timeout_s)
 
-    def to_llm_schema(self) -> Dict[str, Any]:
+    def to_llm_schema(self) -> dict[str, Any]:
         """
         OpenAI / Anthropic compatible tool schema for inclusion in LLM calls.
         """
@@ -135,7 +133,7 @@ class RegisteredTool(ToolProtocol):
 # ---------------------------------------------------------------------------
 
 
-def _extract_schema(fn: Callable) -> Dict[str, Any]:
+def _extract_schema(fn: Callable) -> dict[str, Any]:
     """
     Build a JSON Schema from function type annotations.
     Supports: str, int, float, bool, list, dict, Optional[X].
@@ -144,8 +142,8 @@ def _extract_schema(fn: Callable) -> Dict[str, Any]:
     sig = inspect.signature(fn)
     hints = fn.__annotations__ if hasattr(fn, "__annotations__") else {}
 
-    properties: Dict[str, Any] = {}
-    required: List[str] = []
+    properties: dict[str, Any] = {}
+    required: list[str] = []
 
     type_map = {
         str: "string",
@@ -154,8 +152,8 @@ def _extract_schema(fn: Callable) -> Dict[str, Any]:
         bool: "boolean",
         list: "array",
         dict: "object",
-        List: "array",
-        Dict: "object",
+        list: "array",
+        dict: "object",
     }
 
     for param_name, param in sig.parameters.items():
@@ -166,7 +164,7 @@ def _extract_schema(fn: Callable) -> Dict[str, Any]:
         origin = getattr(annotation, "__origin__", None)
 
         # Handle Optional[X] -> nullable X
-        if origin is type(None) or str(annotation) in ("typing.Optional", ):
+        if origin is type(None) or str(annotation) in ("typing.Optional",):
             # Simplify: treat Optional as optional field
             properties[param_name] = {"type": "string", "nullable": True}
             continue
@@ -183,7 +181,7 @@ def _extract_schema(fn: Callable) -> Dict[str, Any]:
 
         # Primitive types
         json_type = type_map.get(annotation, "string")
-        prop: Dict[str, Any] = {"type": json_type}
+        prop: dict[str, Any] = {"type": json_type}
 
         # Add description from docstring if available (rough extraction)
         prop_desc = _extract_param_doc(fn, param_name)
@@ -202,7 +200,7 @@ def _extract_schema(fn: Callable) -> Dict[str, Any]:
     }
 
 
-def _extract_param_doc(fn: Callable, param_name: str) -> Optional[str]:
+def _extract_param_doc(fn: Callable, param_name: str) -> str | None:
     """Cheap extraction of :param name: from docstring."""
     doc = inspect.getdoc(fn) or ""
     for line in doc.splitlines():
@@ -221,12 +219,12 @@ def _extract_param_doc(fn: Callable, param_name: str) -> Optional[str]:
 
 def tool(
     description: str,
-    name: Optional[str] = None,
+    name: str | None = None,
     timeout: float = 30.0,
     retries: int = 0,
     on_error: str = "raise",
-    fallback: Optional[Callable] = None,
-    parameters_schema: Optional[Dict[str, Any]] = None,
+    fallback: Callable | None = None,
+    parameters_schema: dict[str, Any] | None = None,
 ) -> Callable:
     """
     Decorator that registers a function as a Helix tool.
@@ -282,9 +280,9 @@ class ToolRegistry:
     """
 
     def __init__(self) -> None:
-        self._tools: Dict[str, RegisteredTool] = {}
+        self._tools: dict[str, RegisteredTool] = {}
 
-    def register(self, tool_or_fn: Any, name: Optional[str] = None) -> "ToolRegistry":
+    def register(self, tool_or_fn: Any, name: str | None = None) -> ToolRegistry:
         """
         Register a tool. Accepts either a RegisteredTool (from @tool decorator)
         or a plain callable (auto-wrapped with minimal config).
@@ -313,6 +311,7 @@ class ToolRegistry:
     def get(self, name: str) -> RegisteredTool:
         if name not in self._tools:
             from helix.errors import ToolHallucinatedError
+
             raise ToolHallucinatedError(
                 tool_name=name,
                 available_tools=list(self._tools.keys()),
@@ -322,21 +321,21 @@ class ToolRegistry:
     def has(self, name: str) -> bool:
         return name in self._tools
 
-    def all(self) -> List[RegisteredTool]:
+    def all(self) -> list[RegisteredTool]:
         return list(self._tools.values())
 
-    def names(self) -> List[str]:
+    def names(self) -> list[str]:
         return list(self._tools.keys())
 
     def filtered(
         self,
-        allowed: Optional[List[str]],
-        denied: List[str],
-    ) -> "ToolRegistryView":
+        allowed: list[str] | None,
+        denied: list[str],
+    ) -> ToolRegistryView:
         """Return a filtered view of the registry for an agent's permission scope."""
         return ToolRegistryView(self, allowed=allowed, denied=denied)
 
-    def schemas(self, allowed: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def schemas(self, allowed: list[str] | None = None) -> list[dict[str, Any]]:
         """Return LLM-compatible tool schemas."""
         tools = self.all()
         if allowed is not None:
@@ -358,8 +357,8 @@ class ToolRegistryView:
     def __init__(
         self,
         registry: ToolRegistry,
-        allowed: Optional[List[str]],
-        denied: List[str],
+        allowed: list[str] | None,
+        denied: list[str],
     ) -> None:
         self._registry = registry
         self._allowed = allowed
@@ -377,10 +376,10 @@ class ToolRegistryView:
             raise ToolPermissionError(tool_name=name, agent_id=agent_id)
         return self._registry.get(name)
 
-    def all(self) -> List[RegisteredTool]:
+    def all(self) -> list[RegisteredTool]:
         return [t for t in self._registry.all() if self._is_permitted(t.name)]
 
-    def schemas(self) -> List[Dict[str, Any]]:
+    def schemas(self) -> list[dict[str, Any]]:
         return [t.to_llm_schema() for t in self.all()]
 
     def has(self, name: str) -> bool:
@@ -395,7 +394,7 @@ class ToolRegistryView:
 async def execute_tool(
     registry_view: ToolRegistryView,
     tool_name: str,
-    arguments: Dict[str, Any],
+    arguments: dict[str, Any],
     step: int,
     agent_id: str = "",
 ) -> ToolCallRecord:
