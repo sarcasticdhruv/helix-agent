@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.3] — 2026-02-25
+
+### Changed
+- **Version bump only** — `0.3.2` wheel was already immutably stored on pypi
+  pypi forbids file reuse so a new version is required.
+  No functional changes from `0.3.2`.
+
+---
+
 ## [0.3.2] — 2026-02-24
 
 ### Added

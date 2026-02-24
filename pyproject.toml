@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-framework"
-version = "0.3.2"
+version = "0.3.3"
 description = "Production-grade AI agent framework — cost governance, memory, caching, multi-agent teams, and built-in eval"
 readme = "README.md"
 license = { file = "LICENSE" }
