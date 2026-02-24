@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **helix-agent** are documented here.
+All notable changes to **helix-framework** are documented here.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -47,7 +47,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   their sync wrappers when called from inside `asyncio.run(main())`.
 
 ### Changed
-- **`__version__`** now resolved dynamically via `importlib.metadata.version("helix-agent")`
+- **`__version__`** now resolved dynamically via `importlib.metadata.version("helix-framework")`
   with a source-install fallback, replacing the hardcoded string.
 - **`requirements.txt`** reordered — `google-generativeai` is now the first (un-commented)
   provider; `openai` and `anthropic` moved to commented section.

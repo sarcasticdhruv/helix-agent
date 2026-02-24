@@ -192,7 +192,7 @@ try:
     from importlib.metadata import PackageNotFoundError as _PNFE
     from importlib.metadata import version as _pkg_version
 
-    __version__: str = _pkg_version("helix-agent")
+    __version__: str = _pkg_version("helix-framework")
 except _PNFE:  # editable / source install without metadata
     __version__ = "0.3.0"
 

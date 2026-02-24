@@ -2,8 +2,8 @@
 
 > **Production-grade AI agent framework** — cost governance, memory, semantic caching, multi-agent teams, and built-in evaluation
 
-![PyPI](https://img.shields.io/pypi/v/helix-agent)
-![Python](https://img.shields.io/pypi/pyversions/helix-agent)
+![PyPI](https://img.shields.io/pypi/v/helix-framework)
+![Python](https://img.shields.io/pypi/pyversions/helix-framework)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
@@ -12,10 +12,10 @@ Helix builds on everything AutoGen and CrewAI gave us, then adds the production 
 ## Installation
 
 ```bash
-pip install helix-agent                      # core only
-pip install "helix-agent[gemini]"            # + Gemini (free tier ✓)
-pip install "helix-agent[openai,anthropic]"  # + OpenAI + Anthropic
-pip install "helix-agent[all]"              # every provider
+pip install helix-framework                      # core only
+pip install "helix-framework[gemini]"            # + Gemini (free tier ✓)
+pip install "helix-framework[openai,anthropic]"  # + OpenAI + Anthropic
+pip install "helix-framework[all]"              # every provider
 ```
 
 Or from source:

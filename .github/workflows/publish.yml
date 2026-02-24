@@ -127,6 +127,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.version }}
-          name: "helix-agent ${{ steps.tag.outputs.version }}"
+          name: "helix-framework ${{ steps.tag.outputs.version }}"
           body: ${{ steps.changelog.outputs.notes }}
           files: dist/*
