@@ -111,7 +111,7 @@ jobs:
           # Strip the leading "v" to match Changelog section headings like [0.3.0]
           SEMVER="${VERSION#v}"
           # Extract lines between this version heading and the next
-          NOTES=$(awk "/^## \[${SEMVER}\]/{found=1; next} found && \/^## \[/{exit} found{print}" CHANGELOG.md)
+          NOTES=$(awk "/^## \[${SEMVER}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
           # Multiline output workaround
           {
             echo "notes<<EOF"
