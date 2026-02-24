@@ -61,6 +61,7 @@ class TaskOutput:
             return str(self.pydantic)
         if self.json_dict:
             import json
+
             return json.dumps(self.json_dict, indent=2)
         return self.raw
 
@@ -99,6 +100,7 @@ async def _run_guardrail(
         f"FAIL: <specific reason why it fails>"
     )
     from helix.core.agent import AgentResult
+
     result: AgentResult = await agent.run(validation_prompt)
     raw_verdict = str(result.output).strip()
     if raw_verdict.upper().startswith("PASS"):
@@ -191,6 +193,7 @@ class Task:
 
     def format_inputs(self, inputs: dict[str, Any]) -> Task:
         """Return a copy of this Task with {variables} substituted."""
+
         def _sub(s: str) -> str:
             for k, v in inputs.items():
                 s = s.replace(f"{{{k}}}", str(v))
@@ -248,6 +251,7 @@ class Task:
         agent = task.agent
         if task.tools:
             from helix.core.agent import Agent as HelixAgent
+
             if isinstance(agent, HelixAgent):
                 # Temp-inject tools for this task run
                 for t in task.tools:
@@ -265,7 +269,9 @@ class Task:
 
             # Build TaskOutput
             raw = str(agent_result.output)
-            pydantic_obj = agent_result.output if isinstance(agent_result.output, BaseModel) else None
+            pydantic_obj = (
+                agent_result.output if isinstance(agent_result.output, BaseModel) else None
+            )
             json_d: dict[str, Any] | None = None
             if pydantic_obj:
                 json_d = pydantic_obj.model_dump()
@@ -357,6 +363,7 @@ def _retry_prompt(original: str, failed_output: TaskOutput | None) -> str:
 
 def _write_output_file(path: str, content: str) -> None:
     import os
+
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -370,6 +377,7 @@ def _write_output_file(path: str, content: str) -> None:
 @dataclass
 class PipelineResult:
     """Aggregated result from running a Pipeline."""
+
     task_outputs: list[TaskOutput] = field(default_factory=list)
     final_output: str = ""
     total_cost_usd: float = 0.0
@@ -424,9 +432,7 @@ class Pipeline:
             ctx_parts = list(context_parts)
             for dep in task.context:
                 if dep.output:
-                    ctx_parts.append(
-                        f"[{dep.name}]: {dep.output.raw}"
-                    )
+                    ctx_parts.append(f"[{dep.name}]: {dep.output.raw}")
             context_text = "\n\n".join(ctx_parts)
 
             if task.async_execution:
@@ -438,9 +444,7 @@ class Pipeline:
             else:
                 # Sequential: wait for all pending async first if they are context deps
                 try:
-                    task_output = await task.run(
-                        context_text=context_text, inputs=_inputs
-                    )
+                    task_output = await task.run(context_text=context_text, inputs=_inputs)
                     outputs.append(task_output)
                     context_parts.append(f"[{task.name}]: {task_output.raw}")
                 except Exception as exc:

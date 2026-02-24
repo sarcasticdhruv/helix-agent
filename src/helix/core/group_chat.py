@@ -48,6 +48,7 @@ from helix.core.agent import Agent, AgentResult
 @dataclass
 class ChatMessage:
     """A single message in a GroupChat conversation."""
+
     speaker: str
     content: str
     step: int = 0
@@ -140,6 +141,7 @@ class HumanAgent(ConversableAgent):
 @dataclass
 class GroupChatResult:
     """Result of running a GroupChat."""
+
     messages: list[ChatMessage] = field(default_factory=list)
     final_output: str = ""
     total_cost_usd: float = 0.0

@@ -75,8 +75,7 @@ def _load_yaml(path: str | Path) -> dict[str, Any]:
         import yaml  # type: ignore[import]
     except ImportError as exc:
         raise ImportError(
-            "PyYAML is required for YAML config loading. "
-            "Install it with: pip install pyyaml"
+            "PyYAML is required for YAML config loading. Install it with: pip install pyyaml"
         ) from exc
 
     with open(path, encoding="utf-8") as f:
