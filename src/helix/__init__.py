@@ -60,7 +60,15 @@ from helix.config import (
 from helix.config_store import apply_saved_config as _apply_saved_config
 from helix.context import ExecutionContext
 from helix.core.agent import Agent, AgentResult
+from helix.core.group_chat import (
+    ChatMessage,
+    ConversableAgent,
+    GroupChat,
+    GroupChatResult,
+    HumanAgent,
+)
 from helix.core.session import Session
+from helix.core.task import Pipeline, PipelineResult, Task, TaskOutput
 from helix.core.team import Team
 from helix.core.tool import ToolRegistry, registry, tool
 from helix.core.workflow import Workflow, step
@@ -188,13 +196,33 @@ def eval_suite(name: str, **kwargs: Any) -> Any:
     return EvalSuite(name=name, **kwargs)
 
 
+def from_yaml(
+    agents_yaml: str,
+    tasks_yaml: str,
+    inputs: dict | None = None,
+    **kwargs: Any,
+) -> Pipeline:
+    """
+    Load agents + tasks from YAML files and return a ready-to-run Pipeline.
+
+    Example::
+
+        pipeline = helix.from_yaml("agents.yaml", "tasks.yaml", inputs={"topic": "AI"})
+        result = pipeline.kickoff()
+        print(result.final_output)
+    """
+    from helix.core.yaml_config import from_yaml as _from_yaml
+
+    return _from_yaml(agents_yaml, tasks_yaml, inputs=inputs, **kwargs)
+
+
 try:
     from importlib.metadata import PackageNotFoundError as _PNFE
     from importlib.metadata import version as _pkg_version
 
     __version__: str = _pkg_version("helix-framework")
 except _PNFE:  # editable / source install without metadata
-    __version__ = "0.3.1"
+    __version__ = "0.3.2"
 
 __all__ = [
     "run",
@@ -204,9 +232,20 @@ __all__ = [
     "from_crewai",
     "from_langchain",
     "from_autogen",
+    "from_yaml",
     "eval_suite",
+    # Core classes
     "Agent",
     "AgentResult",
+    "ConversableAgent",
+    "HumanAgent",
+    "GroupChat",
+    "GroupChatResult",
+    "ChatMessage",
+    "Task",
+    "TaskOutput",
+    "Pipeline",
+    "PipelineResult",
     "Workflow",
     "Team",
     "Session",
@@ -215,6 +254,7 @@ __all__ = [
     "ToolRegistry",
     "registry",
     "ExecutionContext",
+    # Config
     "AgentConfig",
     "AgentMode",
     "BudgetConfig",

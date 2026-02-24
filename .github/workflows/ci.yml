@@ -26,18 +26,15 @@ jobs:
           cache: "pip"
 
       - name: Install package + test deps
-        working-directory: helix-lib
         run: |
           pip install -e ".[dev,gemini]"
 
       - name: Run tests
-        working-directory: helix-lib
         run: |
           pytest tests/ --tb=short -q
 
       - name: Upload coverage report
         if: matrix.python-version == '3.13'
-        working-directory: helix-lib
         run: |
           pytest tests/ --cov=helix --cov-report=xml -q
         continue-on-error: true
@@ -58,9 +55,7 @@ jobs:
         run: pip install ruff>=0.4
 
       - name: Ruff check
-        working-directory: helix-lib
         run: ruff check src/ --output-format=github
 
       - name: Ruff format check
-        working-directory: helix-lib
         run: ruff format src/ --check

@@ -7,7 +7,41 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.3.1] — 2026-02-24
+## [0.3.2] — 2026-02-24
+
+### Added
+- **`Task` first-class object** — declarative unit of work assigned to an Agent,
+  with `expected_output`, `output_file`, `output_schema`, `callback`, `context`
+  (dependency chaining), `async_execution`, and `guardrails` chain with auto-retry.
+  Inspired by CrewAI Tasks; extended with Pydantic output validation and
+  both callable and LLM-string guardrails.
+- **`Pipeline`** — runs an ordered list of Tasks in sequence (or concurrently
+  for `async_execution=True` tasks), passing outputs forward as context.
+  `pipeline.kickoff(inputs={...})` mirrors the CrewAI API exactly.
+- **`TaskOutput`** — structured result from a Task run, with `.raw`, `.pydantic`,
+  `.json_dict`, `.summary`, and `.to_dict()` accessors.
+- **`ConversableAgent`** — AutoGen-style agent capable of multi-turn conversation,
+  with `human_input=True` for terminal-based HITL and `max_consecutive_replies`
+  to prevent one agent dominating a group chat.
+- **`HumanAgent`** — a `ConversableAgent` that always prompts the human terminal.
+- **`GroupChat`** — N agents in a shared multi-turn conversation. Speaker selection
+  strategies: `round_robin`, `auto` (LLM picks), `random`, or any callable.
+  Termination by `max_rounds`, `termination_keyword`, or custom `termination_fn`.
+- **`GroupChatResult`** — full message history, transcript, cost, and termination reason.
+- **`backstory` field on `Agent`** — rich character/background context injected into
+  the system prompt, matching the CrewAI `backstory` parameter.
+- **YAML config loader** (`helix.core.yaml_config`) — load agents and tasks from
+  `agents.yaml` / `tasks.yaml` with `{variable}` template substitution.
+  `helix.from_yaml("agents.yaml", "tasks.yaml", inputs={...})` returns a
+  ready-to-run `Pipeline`.
+- **`helix.from_yaml()`** — top-level convenience function for YAML-driven pipelines.
+
+### Changed
+- `Agent.__init__` now accepts `backstory` parameter (default `""`).
+- `__all__` updated with all new public classes.
+
+---
+
 
 ### Changed
 - **PyPI package renamed to `helix-framework`** — install with `pip install helix-framework`;

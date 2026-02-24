@@ -101,6 +101,7 @@ class Agent:
         name: str,
         role: str,
         goal: str,
+        backstory: str = "",
         model: ModelConfig | None = None,
         budget: BudgetConfig | None = None,
         mode: AgentMode = AgentMode.EXPLORE,
@@ -117,6 +118,7 @@ class Agent:
             name=name,
             role=role,
             goal=goal,
+            backstory=backstory,
             mode=mode,
             model=model or ModelConfig(),
             budget=budget,
@@ -442,6 +444,10 @@ class Agent:
             f"You are {cfg.name}, a {cfg.role}.",
             f"Goal: {cfg.goal}",
         ]
+
+        # Backstory (adds rich character context like CrewAI)
+        if cfg.backstory:
+            lines.append(f"Background: {cfg.backstory}")
 
         # System prompt override or registry lookup
         if cfg.system_prompt_override:

@@ -12,10 +12,10 @@ env/
 ENV/
 
 # Distribution / build
-helix-lib/dist/
-helix-lib/build/
-helix-lib/*.egg-info/
-helix-lib/src/*.egg-info/
+dist/
+build/
+*.egg-info/
+src/*.egg-info/
 
 # Test & coverage
 .pytest_cache/

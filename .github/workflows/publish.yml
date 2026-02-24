@@ -24,7 +24,6 @@ jobs:
           cache: "pip"
 
       - name: Install + test
-        working-directory: helix-lib
         run: |
           pip install -e ".[dev,gemini]"
           pytest tests/ -q --tb=short
@@ -49,16 +48,13 @@ jobs:
         run: pip install build twine
 
       - name: Build
-        working-directory: helix-lib
         run: python -m build
 
       - name: Verify distributions
-        working-directory: helix-lib
         run: twine check dist/*
 
       - name: Record hashes (for provenance)
         id: hash
-        working-directory: helix-lib
         run: |
           cd dist
           echo "hashes=$(sha256sum * | base64 -w0)" >> "$GITHUB_OUTPUT"
@@ -67,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: helix-lib/dist/
+          path: dist/
           if-no-files-found: error
 
   # ── 3. Publish to PyPI via Trusted Publishing (no API token needed) ──────────
@@ -115,7 +111,7 @@ jobs:
           # Strip the leading "v" to match Changelog section headings like [0.3.0]
           SEMVER="${VERSION#v}"
           # Extract lines between this version heading and the next
-          NOTES=$(awk "/^## \[${SEMVER}\]/{found=1; next} found && /^## \[/{exit} found{print}" helix-lib/CHANGELOG.md)
+          NOTES=$(awk "/^## \[${SEMVER}\]/{found=1; next} found && \/^## \[/{exit} found{print}" CHANGELOG.md)
           # Multiline output workaround
           {
             echo "notes<<EOF"

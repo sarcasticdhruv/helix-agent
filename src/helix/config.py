@@ -557,6 +557,7 @@ class AgentConfig(BaseModel):
     name: str
     role: str
     goal: str
+    backstory: str = ""  # Rich character/background context (CrewAI-style)
     agent_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: str | None = None
 

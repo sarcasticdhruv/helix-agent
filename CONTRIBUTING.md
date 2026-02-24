@@ -38,7 +38,7 @@ By participating in this project you agree to abide by the [Code of Conduct](COD
 ```bash
 # 1. Fork + clone
 git clone https://github.com/YOUR_USERNAME/helix-agent.git
-cd helix-agent/helix-lib
+cd helix-agent
 
 # 2. Create a virtual environment
 python -m venv .venv

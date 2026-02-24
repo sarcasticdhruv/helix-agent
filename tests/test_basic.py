@@ -4,17 +4,16 @@ Run with: pytest tests/ -v
 """
 
 import asyncio
+
 import pytest
 
 import helix
-from helix.config import AgentMode, BudgetConfig, ModelConfig
-from helix.errors import BudgetExceededError
-from helix.core.tool import tool, ToolRegistry
-from helix.core.workflow import Workflow, step
+from helix.config import AgentConfig, AgentMode, BudgetConfig, ModelConfig
+from helix.context import CostLedger, ExecutionContext
 from helix.core.team import Team
-from helix.context import ExecutionContext, CostLedger, ContextWindow
-from helix.config import AgentConfig
-
+from helix.core.tool import ToolRegistry, tool
+from helix.core.workflow import Workflow, step
+from helix.errors import BudgetExceededError
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -47,11 +46,11 @@ class TestConfig:
         assert minimal_config.agent_id is not None
 
     def test_budget_config_validation(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             BudgetConfig(budget_usd=-1.0)
 
     def test_production_requires_budget(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             AgentConfig(
                 name="x", role="x", goal="x",
                 mode=AgentMode.PRODUCTION,
@@ -69,7 +68,7 @@ class TestConfig:
         assert cfg.primary == "gemini-2.0-flash"
 
     def test_model_config_temperature_bounds(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ModelConfig(temperature=3.0)  # max is 2.0
 
 
@@ -222,6 +221,7 @@ class TestTeam:
     async def test_team_parallel_mock(self):
         """Team parallel strategy — mocked agents."""
         from unittest.mock import AsyncMock, MagicMock
+
         from helix.core.agent import AgentResult
 
         mock_result = AgentResult(
@@ -279,8 +279,8 @@ class TestSyncRun:
 class TestMemory:
     @pytest.mark.asyncio
     async def test_inmemory_backend_upsert_search(self):
-        from helix.memory.backends.inmemory import InMemoryBackend
         from helix.config import MemoryEntry, MemoryKind
+        from helix.memory.backends.inmemory import InMemoryBackend
 
         backend = InMemoryBackend()
         entry = MemoryEntry(
@@ -296,8 +296,8 @@ class TestMemory:
 
     @pytest.mark.asyncio
     async def test_inmemory_backend_delete(self):
-        from helix.memory.backends.inmemory import InMemoryBackend
         from helix.config import MemoryEntry, MemoryKind
+        from helix.memory.backends.inmemory import InMemoryBackend
 
         backend = InMemoryBackend()
         entry = MemoryEntry(
@@ -317,7 +317,7 @@ class TestMemory:
 class TestCache:
     @pytest.mark.asyncio
     async def test_semantic_cache_miss(self):
-        from helix.cache.semantic import SemanticCache, InMemoryCacheBackend
+        from helix.cache.semantic import InMemoryCacheBackend, SemanticCache
         from helix.config import CacheConfig
         from helix.models.embedder import NullEmbedder
 
@@ -335,7 +335,7 @@ class TestCache:
         With threshold=0.0 and NullEmbedder (returns all zeros),
         cosine_similarity returns 0.0 and 0.0 >= 0.0 is True → cache hit.
         """
-        from helix.cache.semantic import SemanticCache, InMemoryCacheBackend
+        from helix.cache.semantic import InMemoryCacheBackend, SemanticCache
         from helix.config import CacheConfig
         from helix.models.embedder import NullEmbedder
 
@@ -353,7 +353,7 @@ class TestCache:
     @pytest.mark.asyncio
     async def test_semantic_cache_context_isolation(self):
         """Different context_hash → cache miss even for identical query."""
-        from helix.cache.semantic import SemanticCache, InMemoryCacheBackend
+        from helix.cache.semantic import InMemoryCacheBackend, SemanticCache
         from helix.config import CacheConfig
         from helix.models.embedder import NullEmbedder
 
@@ -372,8 +372,8 @@ class TestCache:
 
 class TestSafety:
     def test_permission_scope_allow(self):
-        from helix.safety.permissions import PermissionScope
         from helix.config import PermissionConfig
+        from helix.safety.permissions import PermissionScope
 
         scope = PermissionScope(
             PermissionConfig(allowed_tools=["search", "calculator"]),
@@ -387,9 +387,9 @@ class TestSafety:
             scope.check_tool("write_file")
 
     def test_permission_scope_deny(self):
-        from helix.safety.permissions import PermissionScope
         from helix.config import PermissionConfig
         from helix.errors import PermissionDeniedError
+        from helix.safety.permissions import PermissionScope
 
         scope = PermissionScope(
             PermissionConfig(denied_tools=["write_file"]),
@@ -439,8 +439,8 @@ class TestSafety:
 
     @pytest.mark.asyncio
     async def test_audit_log_hash_chain(self, tmp_path):
-        from helix.safety.audit import LocalFileAuditLog
         from helix.config import AuditEntry, AuditEventType
+        from helix.safety.audit import LocalFileAuditLog
 
         log = LocalFileAuditLog(agent_id="test", log_dir=str(tmp_path))
 
@@ -463,8 +463,8 @@ class TestSafety:
 class TestEval:
     @pytest.mark.asyncio
     async def test_tool_selection_scorer(self):
-        from helix.eval.scoring import ToolSelectionScorer
         from helix.config import EvalCase, ToolCallRecord
+        from helix.eval.scoring import ToolSelectionScorer
 
         scorer = ToolSelectionScorer()
         case = EvalCase(
@@ -481,8 +481,8 @@ class TestEval:
 
     @pytest.mark.asyncio
     async def test_trajectory_scorer_forbidden_tool(self):
-        from helix.eval.trajectory import TrajectoryScorer
         from helix.config import EvalCase, ExpectedTrajectory, ToolCallRecord
+        from helix.eval.trajectory import TrajectoryScorer
 
         scorer = TrajectoryScorer()
         case = EvalCase(
