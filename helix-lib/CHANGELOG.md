@@ -7,6 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.1] — 2026-02-24
+
+### Changed
+- **PyPI package renamed to `helix-framework`** — install with `pip install helix-framework`;
+  `import helix` is unchanged.
+- **Optimized provider error handling** — all providers now use `raise ... from err` for
+  cleaner tracebacks and better debuggability.
+- **Enum modernization** — all enums migrated to `StrEnum`, removing redundant `(str, Enum)`
+  double-inheritance.
+- **Reduced boilerplate** — `try/except/pass` blocks replaced with `contextlib.suppress()`
+  across caching, eval, memory, and runtime modules.
+- **Dict literals** — `dict()` constructor calls replaced with `{}` literals in all
+  provider files for consistency and minor performance gain.
+
+---
+
 ## [0.3.0] — 2026-02-23
 
 ### Added

@@ -194,7 +194,7 @@ try:
 
     __version__: str = _pkg_version("helix-framework")
 except _PNFE:  # editable / source install without metadata
-    __version__ = "0.3.0"
+    __version__ = "0.3.1"
 
 __all__ = [
     "run",
