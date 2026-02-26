@@ -7,23 +7,28 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sarcasticdhruv/helix-agent/actions)
 
-Helix gives you agents that actually behave in production: hard budget limits, semantic caching that cuts API costs by 40-70%, persistent memory, multi-agent teams, YAML-based task pipelines, and a 5-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
+Helix gives you agents that actually behave in production: hard budget limits, semantic caching that cuts API costs by 40-70%, persistent memory, multi-agent teams, YAML-based task pipelines, a LangGraph-compatible `StateGraph`, and a 5-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
 
-The `import helix` API is intentionally close to what you already know from AutoGen and CrewAI, but with the production layer those frameworks leave to you: cost governance, caching, memory, observability, and safety controls.
+The `import helix` API is intentionally close to what you already know from AutoGen, CrewAI, and LangGraph, but with the production layer those frameworks leave to you: cost governance, caching, memory, observability, and safety controls.
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Agents](#agents)
+- [Class-Based Agents](#class-based-agents)
+- [Preset Agents](#preset-agents)
+- [Agent Pipelines](#agent-pipelines)
 - [Tools](#tools)
 - [Tasks and Pipelines](#tasks-and-pipelines)
 - [YAML Configuration](#yaml-configuration)
 - [Multi-Agent Teams](#multi-agent-teams)
 - [Group Chat](#group-chat)
 - [Workflows](#workflows)
+- [StateGraph](#stategraph)
 - [Sessions](#sessions)
 - [Budget Enforcement](#budget-enforcement)
+- [Event Hooks](#event-hooks)
 - [Evaluation](#evaluation)
 - [Framework Adapters](#framework-adapters)
 - [CLI](#cli)
@@ -91,6 +96,16 @@ print(f"Cost:  ${result.cost_usd:.4f}")
 print(f"Steps: {result.steps}")
 ```
 
+For the fastest possible start, use `helix.quick()` — no config objects needed:
+
+```python
+import helix
+
+agent = helix.quick("You are a concise Python tutor.", budget_usd=0.10)
+result = helix.run(agent, "Explain list comprehensions.")
+print(result.output)
+```
+
 Inside an async function, call `run_async` or `agent.run` directly:
 
 ```python
@@ -108,6 +123,17 @@ async def main():
 
 asyncio.run(main())
 ```
+
+`helix.quick()` parameters:
+
+| Parameter | Description |
+|---|---|
+| `system_prompt` | The agent's purpose as plain instructions |
+| `name` | Agent name shown in traces (default `"Agent"`) |
+| `model` | Model string, e.g. `"gpt-4o"`. Auto-detected if omitted |
+| `tools` | List of `@helix.tool`-decorated functions |
+| `budget_usd` | Hard spend cap per run (default `0.10`) |
+| `on_event` | Optional async/sync event callback (see [Event Hooks](#event-hooks)) |
 
 ---
 
@@ -150,6 +176,111 @@ result = helix.run(agent, "Summarize last quarter's sales trends.")
 
 `AgentResult` fields: `output`, `cost_usd`, `steps`, `model_used`, `cache_hits`, `cache_savings_usd`, `tool_calls`, `run_id`, `duration_s`, `trace`.
 
+Agents also expose LangChain-compatible aliases: `agent.invoke(task)` (sync) and `await agent.ainvoke(task)` (async), both equivalent to `helix.run()` / `await agent.run()`.
+
+---
+
+## Class-Based Agents
+
+The `@helix.agent` decorator turns any class into an Agent factory. Tools become methods decorated with `@helix.tool`, and the class docstring becomes the system prompt.
+
+```python
+import helix
+
+@helix.agent(model="claude-sonnet-4-6", budget_usd=2.00)
+class WebResearcher:
+    """
+    You are an expert web researcher.
+    Find accurate, up-to-date information and always cite sources.
+    """
+
+    @helix.tool(description="Search the web for recent information.")
+    async def search(self, query: str) -> list[dict]:
+        from helix.tools.builtin import web_search
+        return await web_search(query)
+
+    @helix.tool(description="Fetch and read a URL.")
+    async def fetch(self, url: str) -> str:
+        from helix.tools.builtin import fetch_url
+        result = await fetch_url(url)
+        return result.get("content", "")
+
+# The decorator returns a factory; call it to get an Agent instance
+researcher = WebResearcher()
+result = helix.run(researcher, "Latest AI safety research 2026")
+```
+
+`@helix.agent` options:
+
+| Parameter | Description |
+|---|---|
+| `model` | LLM model string. Auto-detected if omitted |
+| `budget_usd` | Spending cap per run (default `0.50`) |
+| `mode` | `"explore"` (default) or `"production"` |
+| `name` | Override agent name; defaults to class name |
+| `backstory` | Rich background context injected into system prompt |
+
+---
+
+## Preset Agents
+
+`helix.presets` provides nine ready-made agent factories so you can start in one line:
+
+```python
+from helix.presets import web_researcher, writer, coder, summariser
+
+# Single agent
+result = helix.run(web_researcher(), "Top AI papers this week")
+
+# Code generation
+result = helix.run(coder("TypeScript"), "Write a UUID v4 generator")
+
+# Pipe agents together with |
+research_and_write = web_researcher() | writer()
+result = research_and_write.run_sync("Write a report on quantum computing")
+```
+
+**Available presets:**
+
+| Factory | Description |
+|---|---|
+| `web_researcher(budget_usd, model, max_results)` | Web search + URL fetching |
+| `writer(style, budget_usd)` | Polished prose from bullet points or research |
+| `summariser(style, budget_usd)` | Compress long text into a summary |
+| `fact_checker(budget_usd)` | Verify claims against web sources |
+| `coder(language, budget_usd, allow_file_io)` | Code generation and debugging |
+| `code_reviewer(language, budget_usd)` | Bug, style, and security review |
+| `data_analyst(budget_usd)` | Statistical analysis with calculator tool |
+| `api_agent(base_url, auth_token, budget_usd)` | REST API orchestration |
+| `assistant(domain, budget_usd)` | General-purpose assistant for any domain |
+
+---
+
+## Agent Pipelines
+
+Use the `|` operator to wire agents into a sequential pipeline. Each agent's output becomes the next agent's input.
+
+```python
+from helix.presets import web_researcher, summariser, writer
+
+# Build with | operator
+pipeline = web_researcher() | summariser() | writer(style="blog post")
+result = pipeline.run_sync("Quantum computing advances in 2026")
+print(result.output)
+print(f"Cost: ${result.cost_usd:.4f}")
+```
+
+Or use `helix.chain()` for a more explicit form:
+
+```python
+pipeline = helix.chain(web_researcher(), summariser(), writer())
+result = pipeline.run_sync("Quantum computing advances in 2026")
+```
+
+AgentPipeline also exposes:
+- `await pipeline.run(task)` — async version
+- `pipeline.agents` — list of Agent instances in the chain
+
 ---
 
 ## Tools
@@ -183,15 +314,31 @@ agent = helix.Agent(
 result = helix.run(agent, "What are the latest AI headlines?")
 ```
 
-**Built-in tools** (12 included):
+**Built-in tools** (13 included):
 
 ```python
 import helix.tools.builtin  # registers tools globally
 
 # web_search, fetch_url, read_file, write_file, list_directory,
 # calculator, json_query, get_datetime, get_env,
-# text_stats, extract_urls, sleep
+# text_stats, extract_urls, sleep, execute_python
 ```
+
+The `execute_python` tool runs sandboxed Python code in an isolated subprocess. Dangerous modules (`subprocess`, `os.system`, `ctypes`, `pty`, `multiprocessing`) are blocked. Returns `{"success", "stdout", "stderr", "returncode"}` with a configurable timeout (default 15 s).
+
+```python
+from helix.tools.builtin import execute_python
+
+# Use inside an agent that needs to run arbitrary Python
+agent = helix.Agent(
+    name="Calculator",
+    role="Python executor",
+    goal="Run Python snippets and return results.",
+    tools=[execute_python],
+)
+```
+
+Use `helix.discover_tools()` to list every tool registered in the global registry (built-ins + any `@helix.tool` functions loaded at import time).
 
 ---
 
@@ -452,6 +599,74 @@ chat = helix.GroupChat(
 
 ---
 
+## StateGraph
+
+`helix.StateGraph` is a LangGraph-compatible directed graph engine for building complex agentic pipelines with cycles, conditional branching, and checkpoint persistence.
+
+```python
+import helix
+from typing import TypedDict
+
+class State(TypedDict):
+    topic: str
+    draft: str
+    ready: bool
+
+researcher = helix.presets.web_researcher()
+writer     = helix.presets.writer()
+
+async def research_node(state: State) -> dict:
+    result = await researcher.run(state["topic"])
+    return {"draft": result.output}
+
+async def write_node(state: State) -> dict:
+    result = await writer.run(state["draft"])
+    return {"draft": result.output, "ready": True}
+
+def router(state: State) -> str:
+    return helix.END if state.get("ready") else "write"
+
+graph = (
+    helix.StateGraph(State)
+    .add_node("research", research_node)
+    .add_node("write", write_node)
+    .add_edge("research", "write")
+    .add_conditional_edges("write", router, {"write": "write", helix.END: helix.END})
+    .set_entry_point("research")
+    .compile()
+)
+
+result = graph.run_sync({"topic": "Quantum computing in 2026", "draft": "", "ready": False})
+print(result["draft"])
+```
+
+**StateGraph API:**
+
+| Method | Description |
+|---|---|
+| `.add_node(name, fn)` | Register an async or sync callable as a graph node |
+| `.add_edge(a, b)` | Unconditional edge from node `a` to node `b` |
+| `.add_conditional_edges(node, fn, mapping)` | Routing function determines next node |
+| `.set_entry_point(node)` | First node executed |
+| `.set_finish_point(node)` | Node that signals graph completion |
+| `.compile(checkpoint_dir=...)` | Returns `CompiledGraph` |
+
+**CompiledGraph execution:**
+
+```python
+result = graph.run_sync(initial_state)       # synchronous
+result = await graph.run(initial_state)      # async
+result = await graph.ainvoke(initial_state)  # LangChain-compatible alias
+async for state in graph.stream(initial_state):  # step-by-step streaming
+    print(state)
+```
+
+`helix.END` and `helix.START` are exported directly from the top-level `helix` namespace.
+
+Pass `checkpoint_dir=".helix/checkpoints"` to `.compile()` to save state after every node, enabling resume-after-crash for long-running graphs.
+
+---
+
 ## Workflows
 
 Workflows are step-based directed pipelines with retry, timeout, fallback, and branching.
@@ -501,6 +716,51 @@ async def main():
 
 asyncio.run(main())
 ```
+
+---
+
+## Event Hooks
+
+Attach an `on_event` callback to any agent to receive live telemetry without any extra config — no trace files, no external services.
+
+```python
+import helix
+from helix.core.hooks import HookEvent
+
+async def my_hook(event: HookEvent) -> None:
+    if event.type == "tool_call":
+        print(f"  → {event.data['tool_name']}({event.data['args']})")
+    elif event.type == "step_end":
+        print(f"  ✓ step {event.step} — ${event.cost_so_far:.4f} spent")
+    elif event.type == "llm_call":
+        print(f"  [LLM] {event.data['model']}")
+    elif event.type == "cache_hit":
+        print(f"  [CACHE] saved ${event.data['saved_usd']:.4f}")
+
+agent = helix.Agent(
+    name="Researcher",
+    role="Research analyst",
+    goal="Find information.",
+    on_event=my_hook,  # sync or async
+)
+```
+
+**Event types:**
+
+| Event | Payload keys |
+|---|---|
+| `step_start` | `step` |
+| `step_end` | `step`, `output_preview` |
+| `llm_call` | `model`, `messages` |
+| `llm_response` | `model`, `tokens`, `finish_reason` |
+| `tool_call` | `tool_name`, `args` |
+| `tool_result` | `tool_name`, `result_preview` |
+| `tool_error` | `tool_name`, `error` |
+| `cache_hit` | `similarity`, `saved_usd` |
+| `done` | `output_preview`, `steps`, `cost_usd` |
+| `error` | `error` |
+
+Hook errors are silently swallowed so they never affect agent execution. Both sync and async callables are supported.
 
 ---
 
@@ -567,6 +827,45 @@ asyncio.run(main())
 
 The eval suite runs 5 scorers per case: factual accuracy, tool usage, trajectory adherence, cost efficiency, and output format.
 
+**`@suite.case` decorator:**
+
+```python
+from helix.eval.suite import EvalSuite
+from helix.config import EvalCase
+
+suite = EvalSuite("my-suite")
+
+@suite.case
+def capitals():
+    return EvalCase(
+        input="What is the capital of Germany?",
+        expected_facts=["Berlin"],
+        max_cost_usd=0.05,
+    )
+
+@suite.case
+def arithmetic():
+    return EvalCase(
+        input="What is 25% of 400?",
+        expected_facts=["100"],
+    )
+
+# suite now has both cases registered; the function name becomes the case name
+```
+
+**EvalCase options:**
+
+| Parameter | Description |
+|---|---|
+| `input` | Task string sent to the agent |
+| `expected_facts` | Strings that must appear in the output |
+| `expected_tools` | Tool names the agent is expected to call |
+| `expected_trajectory` | `ExpectedTrajectory` for sequence/step constraints |
+| `max_steps` | Maximum reasoning steps (default 10) |
+| `max_cost_usd` | Cost cap per case (default 1.00) |
+| `pass_threshold` | Minimum overall score to pass (default 0.70) |
+| `tags` | Labels for filtering subsets |
+
 ---
 
 ## Framework Adapters
@@ -582,6 +881,15 @@ llm = helix.wrap_llm(ChatOpenAI(model="gpt-4o"), budget_usd=2.00)
 ```
 
 ```python
+from langchain.chains import LLMChain
+import helix
+
+vchain = helix.from_langchain(LLMChain(...), budget_usd=3.00)
+result = await vchain.run(inputs={"input": "Summarise this"})
+print(f"Cost: ${vchain.cost_usd:.4f}")
+```
+
+```python
 from crewai import Crew
 import helix
 
@@ -589,6 +897,15 @@ crew = Crew(agents=[...], tasks=[...])
 wrapped = helix.from_crewai(crew, budget_usd=5.00)
 result = await wrapped.run(inputs={"topic": "AI trends"})
 print(f"Cost: ${wrapped.cost_usd:.4f}")
+```
+
+```python
+from autogen import AssistantAgent
+import helix
+
+ag_agent = AssistantAgent("assistant", llm_config={...})
+wrapped = helix.from_autogen(ag_agent, budget_usd=2.00)
+result = await wrapped.run(inputs={"message": "Explain transformers"})
 ```
 
 ---
@@ -612,13 +929,15 @@ helix config set KEY value            # set a provider API key
 ```
 helix/
 ├── core/            Agent, ConversableAgent, GroupChat, Task, Pipeline,
-│                    Workflow, Team, Session, Tool
+│                    Workflow, Team, Session, Tool, StateGraph, AgentPipeline
+├── presets/         9 ready-made agent factories (web_researcher, coder, writer, …)
 ├── memory/          Short-term buffer, WAL-backed long-term store, episodic recall
 ├── cache/           Semantic cache (tier 1), plan cache (tier 2), prefix cache (tier 3)
 ├── models/          Router, complexity estimator, 12 provider backends
 ├── safety/          Cost governor, permission model, guardrails, HITL, audit log
 ├── context_engine/  Multi-factor token decay, context compactor, preflight estimator
-├── eval/            EvalSuite, 5 scorers, trajectory eval, regression gate, monitor
+├── eval/            EvalSuite, 5 scorers, @suite.case decorator, trajectory eval,
+│                    regression gate, monitor
 ├── observability/   Tracer, ghost debug resolver, failure replay
 ├── adapters/        LangChain, CrewAI, AutoGen + universal LLM wrapper
 ├── runtime/         Event loop, worker pool, health checks
@@ -629,13 +948,13 @@ helix/
 
 ## Supported Providers
 
-| Environment variable | Provider | Models | Free tier |
+| Environment variable | Provider | Notable models | Free tier |
 |---|---|---|:---:|
 | `GOOGLE_API_KEY` | Google Gemini | Gemini 2.5 Flash/Pro, 2.0 Flash | Yes |
-| `OPENAI_API_KEY` | OpenAI | GPT-4o, GPT-4o-mini, o1, o3 | No |
-| `ANTHROPIC_API_KEY` | Anthropic | Claude Opus/Sonnet/Haiku | No |
-| `GROQ_API_KEY` | Groq | Llama 3, Mixtral, Gemma | Yes |
-| `MISTRAL_API_KEY` | Mistral AI | Mistral Large/Small, Codestral | Partial |
+| `OPENAI_API_KEY` | OpenAI | GPT-4o, GPT-4o-mini, o1, o3, o3-mini | No |
+| `ANTHROPIC_API_KEY` | Anthropic | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | No |
+| `GROQ_API_KEY` | Groq | Llama 3.3-70B, Llama 3.1-8B, Mixtral, Gemma 2 | Yes |
+| `MISTRAL_API_KEY` | Mistral AI | Mistral Large/Small, Codestral, Pixtral | Partial |
 | `COHERE_API_KEY` | Cohere | Command R+ | Partial |
 | `TOGETHER_API_KEY` | Together AI | 200+ open-source models | No |
 | `OPENROUTER_API_KEY` | OpenRouter | 100+ models | Partial |
@@ -644,7 +963,7 @@ helix/
 | `PERPLEXITY_API_KEY` | Perplexity | Online search models | No |
 | `FIREWORKS_API_KEY` | Fireworks | Fast open-source inference | No |
 
-Set multiple keys and Helix automatically falls back to the next available provider on failure.
+Set multiple keys and Helix automatically falls back to the next available provider on failure. Ollama (`ollama/*` or `local/*`) and any OpenAI-compatible endpoint (Azure, custom base URL) are also supported without environment variable requirements.
 
 ---
 
