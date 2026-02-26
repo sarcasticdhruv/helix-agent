@@ -32,6 +32,7 @@ Quickstart
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from helix.config import (
@@ -60,6 +61,8 @@ from helix.config import (
 from helix.config_store import apply_saved_config as _apply_saved_config
 from helix.context import ExecutionContext
 from helix.core.agent import Agent, AgentResult
+from helix.core.agent_decorator import agent
+from helix.core.graph import END, START, CompiledGraph, StateGraph
 from helix.core.group_chat import (
     ChatMessage,
     ConversableAgent,
@@ -67,10 +70,12 @@ from helix.core.group_chat import (
     GroupChatResult,
     HumanAgent,
 )
+from helix.core.hooks import HookEvent
+from helix.core.pipeline import AgentPipeline
 from helix.core.session import Session
 from helix.core.task import Pipeline, PipelineResult, Task, TaskOutput
 from helix.core.team import Team
-from helix.core.tool import ToolRegistry, registry, tool
+from helix.core.tool import ToolRegistry, discover_tools, registry, tool
 from helix.core.workflow import Workflow, step
 from helix.errors import (
     BudgetExceededError,
@@ -82,6 +87,83 @@ from helix.errors import (
 )
 
 _apply_saved_config()
+
+# ── Register built-in tools in sys.modules so 'from helix.tools.builtin import …' works ──
+with contextlib.suppress(Exception):
+    import helix.tools.builtin as _tools_builtin  # noqa: F401 — side-effect import
+
+# ── Preset agents: helix.presets.web_researcher(), helix.presets.coder()…
+with contextlib.suppress(Exception):
+    from helix import presets  # noqa: F401
+
+
+def quick(
+    system_prompt: str,
+    *,
+    name: str = "Agent",
+    model: str | None = None,
+    tools: list[Any] | None = None,
+    budget_usd: float = 0.10,
+    on_event: Any | None = None,
+) -> Agent:
+    """
+    Create a minimal agent from a single system prompt string.
+
+    This is the fastest way to get started — no role, goal, or config
+    objects required.  Perfect for experimentation and notebooks.
+
+    Args:
+        system_prompt: The agent's purpose, written as plain instructions.
+        name:          Agent name (shown in traces).  Default ``"Agent"``.
+        model:         LLM model string, e.g. ``"gpt-4o"`` or ``"claude-sonnet-4-6"``.
+                       Omit to auto-detect from available API keys.
+        tools:         List of ``@helix.tool``-decorated functions.
+        budget_usd:    Hard spend cap per run.  Default ``0.10``.
+        on_event:      Optional async or sync callback for live events.
+
+    Returns:
+        A :class:`helix.Agent` ready to run.
+
+    Example::
+
+        import helix
+
+        agent = helix.quick("You are a concise Python tutor.")
+        result = helix.run(agent, "Explain list comprehensions.")
+        print(result.output)
+    """
+    return Agent(
+        name=name,
+        role=name,
+        goal=system_prompt,
+        system_prompt=system_prompt,
+        tools=tools or [],
+        model=ModelConfig(primary=model) if model else ModelConfig(),
+        budget=BudgetConfig(budget_usd=budget_usd),
+        on_event=on_event,
+    )
+
+
+def chain(*agents_or_pipelines: Any) -> AgentPipeline:
+    """
+    Build an :class:`AgentPipeline` from two or more agents.
+
+    Equivalent to ``agent_a | agent_b | agent_c`` but more readable
+    when composing many agents.
+
+    Example::
+
+        from helix.presets import web_researcher, summariser, writer
+
+        pipeline = helix.chain(web_researcher(), summariser(), writer())
+        result = pipeline.run_sync("Quantum computing advances 2026")
+    """
+    if not agents_or_pipelines:
+        raise ValueError("chain() requires at least one agent")
+    result: Any = agents_or_pipelines[0]
+    for nxt in agents_or_pipelines[1:]:
+        result = result | nxt
+    return result
 
 
 def run(
@@ -227,6 +309,8 @@ except _PNFE:  # editable / source install without metadata
 __all__ = [
     "run",
     "run_async",
+    "quick",
+    "chain",
     "create_agent",
     "wrap_llm",
     "from_crewai",
@@ -234,9 +318,15 @@ __all__ = [
     "from_autogen",
     "from_yaml",
     "eval_suite",
+    "discover_tools",
+    # Decorators
+    "agent",
+    "tool",
+    "step",
     # Core classes
     "Agent",
     "AgentResult",
+    "AgentPipeline",
     "ConversableAgent",
     "HumanAgent",
     "GroupChat",
@@ -249,11 +339,10 @@ __all__ = [
     "Workflow",
     "Team",
     "Session",
-    "step",
-    "tool",
     "ToolRegistry",
     "registry",
     "ExecutionContext",
+    "HookEvent",
     # Config
     "AgentConfig",
     "AgentMode",
@@ -274,6 +363,12 @@ __all__ = [
     "WorkflowMode",
     "EpisodeOutcome",
     "FailureClass",
+    # Graph
+    "StateGraph",
+    "CompiledGraph",
+    "END",
+    "START",
+    # Errors
     "HelixError",
     "BudgetExceededError",
     "LoopDetectedError",

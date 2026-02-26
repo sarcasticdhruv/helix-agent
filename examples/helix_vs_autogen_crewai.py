@@ -107,40 +107,40 @@ plus the production-safety layer neither ships with.
 # SECTION 1 — Imports and setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-import asyncio
-import json
-import sys
-import os
+import asyncio  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import helix
-from helix.core.workflow import Workflow, step
-from helix.config import BudgetConfig, ModelConfig, PermissionConfig, StructuredOutputConfig
-from pydantic import BaseModel
-from typing import List
 
+from pydantic import BaseModel  # noqa: E402
+
+import helix  # noqa: E402
+from helix.config import BudgetConfig, PermissionConfig, StructuredOutputConfig  # noqa: E402
+from helix.core.workflow import Workflow, step  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 2 — Shared tools (reused across demos)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @helix.tool(description="Look up a fact about a topic. Returns a short summary.")
 async def lookup(topic: str) -> dict:
     """Simulates a knowledge lookup (no real network call needed for demo)."""
     knowledge = {
-        "autogen":  "AutoGen is Microsoft's event-driven multi-agent framework. "
-                    "It uses an actor model with async message passing. Agents communicate "
-                    "via a message bus. Supports distributed gRPC runtimes and Docker code execution.",
-        "crewai":   "CrewAI is an open-source framework for orchestrating autonomous AI agents "
-                    "using a role-based 'crew' metaphor. Crews + Flows. Over 100k certified devs. "
-                    "YAML-based agent definitions. Enterprise cloud offering.",
-        "helix":    "Helix is a production-grade Python agent framework with built-in budget "
-                    "governance, semantic caching, provider-agnostic routing (Gemini/OpenAI/"
-                    "Anthropic/Groq/Mistral/...), context compaction, episodic memory, guardrails, "
-                    "HITL, and a built-in eval suite.",
+        "autogen": "AutoGen is Microsoft's event-driven multi-agent framework. "
+        "It uses an actor model with async message passing. Agents communicate "
+        "via a message bus. Supports distributed gRPC runtimes and Docker code execution.",
+        "crewai": "CrewAI is an open-source framework for orchestrating autonomous AI agents "
+        "using a role-based 'crew' metaphor. Crews + Flows. Over 100k certified devs. "
+        "YAML-based agent definitions. Enterprise cloud offering.",
+        "helix": "Helix is a production-grade Python agent framework with built-in budget "
+        "governance, semantic caching, provider-agnostic routing (Gemini/OpenAI/"
+        "Anthropic/Groq/Mistral/...), context compaction, episodic memory, guardrails, "
+        "HITL, and a built-in eval suite.",
         "langchain": "LangChain is a chaining framework for LLM apps. Primarily a composition "
-                     "library rather than an agent framework. LangGraph adds graph-based workflows.",
+        "library rather than an agent framework. LangGraph adds graph-based workflows.",
     }
     topic_key = topic.lower().replace("-", "").replace(" ", "")
     for key, val in knowledge.items():
@@ -153,10 +153,15 @@ async def lookup(topic: str) -> dict:
 async def calculate(expression: str) -> dict:
     """Safe math evaluator for demo."""
     import math
+
     safe = {
         "__builtins__": {},
-        "sqrt": math.sqrt, "log": math.log, "pi": math.pi,
-        "abs": abs, "round": round, "pow": pow,
+        "sqrt": math.sqrt,
+        "log": math.log,
+        "pi": math.pi,
+        "abs": abs,
+        "round": round,
+        "pow": pow,
     }
     try:
         result = eval(expression, safe)  # noqa: S307
@@ -166,9 +171,9 @@ async def calculate(expression: str) -> dict:
 
 
 @helix.tool(description="Summarize a list of bullet points into a paragraph.")
-async def summarize_bullets(bullets: List[str]) -> dict:
+async def summarize_bullets(bullets: list[str]) -> dict:
     """Joins bullet points into a formatted summary."""
-    text = " ".join(f"({i+1}) {b}" for i, b in enumerate(bullets))
+    text = " ".join(f"({i + 1}) {b}" for i, b in enumerate(bullets))
     return {"summary": f"Key findings: {text}"}
 
 
@@ -180,11 +185,12 @@ async def summarize_bullets(bullets: List[str]) -> dict:
 #     - result.cost_usd, result.tool_calls, result.model_used — all in one result.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def demo_single_agent():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 1 — Single Agent with Tools + Budget Governance")
     print("  (AutoGen: no budget control | CrewAI: no budget control)")
-    print("═"*70)
+    print("═" * 70)
 
     agent = helix.Agent(
         name="ResearchBot",
@@ -198,14 +204,14 @@ async def demo_single_agent():
     result = await helix.run_async(
         agent,
         "Use the lookup tool to find out what AutoGen is, "
-        "then what CrewAI is, then compare them in 2 sentences."
+        "then what CrewAI is, then compare them in 2 sentences.",
     )
 
     if result.error:
         print(f"  ✗ Error: {result.error}")
     else:
         print(f"\n  Answer:\n{result.output}")
-        print(f"\n  ── Metadata (Helix-only fields) ──")
+        print("\n  ── Metadata (Helix-only fields) ──")
         print(f"  model_used  : {result.model_used}")
         print(f"  cost_usd    : ${result.cost_usd:.6f}  (hard cap was $0.10)")
         print(f"  tool_calls  : {result.tool_calls}")
@@ -221,19 +227,20 @@ async def demo_single_agent():
 #     - CrewAI: has output_json/output_pydantic on Task, but not on the agent run.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class FrameworkComparison(BaseModel):
     framework_name: str
     primary_use_case: str
-    top_3_strengths: List[str]
+    top_3_strengths: list[str]
     main_weakness: str
     best_for_team_size: str
 
 
 async def demo_structured_output():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 2 — Structured Output (Pydantic schema enforcement)")
     print("  (AutoGen: raw string | CrewAI: task-level only)")
-    print("═"*70)
+    print("═" * 70)
 
     agent = helix.Agent(
         name="Analyst",
@@ -246,8 +253,7 @@ async def demo_structured_output():
 
     result = await helix.run_async(
         agent,
-        "Use the lookup tool to research CrewAI, then fill in a structured "
-        "comparison card for it.",
+        "Use the lookup tool to research CrewAI, then fill in a structured comparison card for it.",
         output_schema=FrameworkComparison,
     )
 
@@ -277,12 +283,13 @@ async def demo_structured_output():
 #     - Helix: total_cost_usd tracked across the whole team automatically.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def demo_sequential_team():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 3 — Sequential Team (Researcher → Analyst → Writer)")
     print("  CrewAI equivalent: Crew(process=Process.sequential)")
     print("  AutoGen equivalent: GroupChat with ordered speaker selection")
-    print("═"*70)
+    print("═" * 70)
 
     researcher = helix.Agent(
         name="Researcher",
@@ -310,7 +317,7 @@ async def demo_sequential_team():
     team = helix.Team(
         name="framework-review-team",
         agents=[researcher, analyst, writer],
-        strategy="sequential",          # researcher → analyst → writer
+        strategy="sequential",  # researcher → analyst → writer
     )
 
     result = await team.run(
@@ -323,7 +330,7 @@ async def demo_sequential_team():
         print(f"  ✗ Error: {result.error}")
     else:
         print(f"\n  Final output:\n{result.final_output}")
-        print(f"\n  ── Team Metadata ──")
+        print("\n  ── Team Metadata ──")
         print(f"  Total cost : ${result.total_cost_usd:.6f}")
         print(f"  Duration   : {result.duration_s:.2f}s")
         print(f"  Agents run : {len(result.agent_results)}")
@@ -340,12 +347,13 @@ async def demo_sequential_team():
 #     - Helix: one line change from sequential → parallel.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def demo_parallel_team():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 4 — Parallel Team (3 specialists run concurrently)")
     print("  CrewAI equivalent: multiple Tasks with async_execution=True")
     print("  AutoGen equivalent: custom GroupChat with simultaneous speak")
-    print("═"*70)
+    print("═" * 70)
 
     autogen_specialist = helix.Agent(
         name="AutoGenExpert",
@@ -374,7 +382,7 @@ async def demo_parallel_team():
     team = helix.Team(
         name="parallel-analysis-team",
         agents=[autogen_specialist, crewai_specialist, helix_specialist],
-        strategy="parallel",            # all three run at the same time
+        strategy="parallel",  # all three run at the same time
     )
 
     result = await team.run(
@@ -387,14 +395,14 @@ async def demo_parallel_team():
     else:
         outputs = result.final_output
         if isinstance(outputs, list):
-            for i, (agent_r, out) in enumerate(
-                zip(result.agent_results, outputs), 1
-            ):
+            for i, (agent_r, out) in enumerate(zip(result.agent_results, outputs, strict=False), 1):
                 print(f"\n  [{i}] {agent_r.agent_name}:\n  {out}")
         else:
             print(f"\n  Output:\n{outputs}")
-        print(f"\n  Total cost: ${result.total_cost_usd:.6f} | "
-              f"Duration: {result.duration_s:.2f}s (parallel!)")
+        print(
+            f"\n  Total cost: ${result.total_cost_usd:.6f} | "
+            f"Duration: {result.duration_s:.2f}s (parallel!)"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,6 +413,7 @@ async def demo_parallel_team():
 #     - AutoGen: no built-in workflow DSL (use custom code or Swarm patterns).
 #     - Helix: composable, retryable steps with a fluent builder pattern.
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @step(name="fetch_frameworks", retry=1)
 async def fetch_frameworks(topic: str) -> dict:
@@ -422,10 +431,10 @@ async def fetch_frameworks(topic: str) -> dict:
 async def score_frameworks(data: dict) -> dict:
     """Assign rough production-readiness scores (demo scoring logic)."""
     scores = {
-        "helix":     {"budget_control": 10, "provider_support": 9, "observability": 9},
-        "autogen":   {"budget_control":  1, "provider_support": 7, "observability": 7},
-        "crewai":    {"budget_control":  2, "provider_support": 8, "observability": 6},
-        "langchain": {"budget_control":  1, "provider_support": 9, "observability": 5},
+        "helix": {"budget_control": 10, "provider_support": 9, "observability": 9},
+        "autogen": {"budget_control": 1, "provider_support": 7, "observability": 7},
+        "crewai": {"budget_control": 2, "provider_support": 8, "observability": 6},
+        "langchain": {"budget_control": 1, "provider_support": 9, "observability": 5},
     }
     results = {}
     for fw in data.get("frameworks", []):
@@ -440,28 +449,30 @@ async def format_scorecard(data: dict) -> str:
     for fw, s in data.get("scores", {}).items():
         if isinstance(s, dict) and "budget_control" in s:
             total = sum(s.values())
-            lines.append(f"  {fw:<12} budget={s['budget_control']}/10  "
-                         f"providers={s['provider_support']}/10  "
-                         f"observability={s['observability']}/10  "
-                         f"→ total={total}/30")
+            lines.append(
+                f"  {fw:<12} budget={s['budget_control']}/10  "
+                f"providers={s['provider_support']}/10  "
+                f"observability={s['observability']}/10  "
+                f"→ total={total}/30"
+            )
     return "\n".join(lines)
 
 
 async def demo_workflow():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 5 — Fluent Workflow DSL (.then / .parallel / .branch)")
     print("  CrewAI equivalent: Flow with @start/@listen decorators")
     print("  AutoGen equivalent: no built-in DSL — write custom code")
-    print("═"*70)
+    print("═" * 70)
 
     pipeline = (
         Workflow("framework-scorecard-pipeline")
-        .then(fetch_frameworks)                     # step 1 — fetch
-        .then(score_frameworks)                     # step 2 — score
+        .then(fetch_frameworks)  # step 1 — fetch
+        .then(score_frameworks)  # step 2 — score
         # branch: human review for "important" topics, skip otherwise
         .branch(
             condition=lambda data: len(data.get("frameworks", [])) >= 3,
-            if_true=format_scorecard,               # format if 3+ frameworks
+            if_true=format_scorecard,  # format if 3+ frameworks
             if_false=lambda d: f"Only {d.get('frameworks')} found.",
         )
         .with_budget(0.50)
@@ -485,11 +496,12 @@ async def demo_workflow():
 #     - Helix: security-first — production agents should never run unrestricted.
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def demo_permissions():
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print("DEMO 6 — Permission Control (tool allow/deny lists)")
     print("  AutoGen: no built-in permissions | CrewAI: no built-in permissions")
-    print("═"*70)
+    print("═" * 70)
 
     # This agent can ONLY call lookup — calculate is explicitly denied.
     restricted_agent = helix.Agent(
@@ -498,22 +510,23 @@ async def demo_permissions():
         goal="Look up facts. Never perform calculations.",
         tools=[lookup, calculate],
         permissions=PermissionConfig(
-            denied_tools=["calculate"],   # ← Helix exclusive
+            denied_tools=["calculate"],  # ← Helix exclusive
         ),
         budget=BudgetConfig(budget_usd=0.05),
     )
 
     result = await helix.run_async(
         restricted_agent,
-        "Use lookup to find what AutoGen is. "
-        "Also try to calculate 2+2 (this should be blocked)."
+        "Use lookup to find what AutoGen is. Also try to calculate 2+2 (this should be blocked).",
     )
 
     if result.error:
         print(f"  ✗ Error: {result.error}")
     else:
         print(f"\n  Output:\n{result.output}")
-        print(f"\n  calculate tool was denied — agent couldn't use it even though it was registered.")
+        print(
+            "\n  calculate tool was denied — agent couldn't use it even though it was registered."
+        )
         print(f"  Cost: ${result.cost_usd:.6f} | Tool calls made: {result.tool_calls}")
 
 
@@ -521,16 +534,17 @@ async def demo_permissions():
 # SECTION 9 — Main runner
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def main():
     print(COMPARISON)
 
     demos = [
-        ("1 — Single Agent + Budget",       demo_single_agent),
-        ("2 — Structured Output",           demo_structured_output),
-        ("3 — Sequential Team",             demo_sequential_team),
-        ("4 — Parallel Team",               demo_parallel_team),
-        ("5 — Fluent Workflow DSL",         demo_workflow),
-        ("6 — Permission Control",          demo_permissions),
+        ("1 — Single Agent + Budget", demo_single_agent),
+        ("2 — Structured Output", demo_structured_output),
+        ("3 — Sequential Team", demo_sequential_team),
+        ("4 — Parallel Team", demo_parallel_team),
+        ("5 — Fluent Workflow DSL", demo_workflow),
+        ("6 — Permission Control", demo_permissions),
     ]
 
     passed = 0
@@ -544,9 +558,9 @@ async def main():
             print(f"\n  ✗ Demo {label} raised: {type(exc).__name__}: {exc}")
             failed += 1
 
-    print("\n" + "═"*70)
+    print("\n" + "═" * 70)
     print(f"  Results: {passed} passed, {failed} failed")
-    print("═"*70)
+    print("═" * 70)
     print("""
   What you just saw — features neither AutoGen nor CrewAI ship:
 

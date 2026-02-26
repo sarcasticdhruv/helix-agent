@@ -4,14 +4,17 @@ helix/cli/__main__.py
 Helix CLI entry point.
 
 Commands:
-  helix doctor              Environment + provider health check
-  helix run <file>          Execute an agent file
-  helix trace <run_id>      View a trace
-  helix eval run            Run eval suite
-  helix cache stats         Cache statistics
-  helix cost --all          Cost report
-  helix models              List models with pricing
-  helix replay <run_id>     Interactive failure replay
+  helix doctor                  Environment + provider health check
+  helix run <file>              Execute an agent file
+  helix serve <file>            Expose an agent as a FastAPI HTTP service
+  helix new <name>              Scaffold a new agent project
+  helix test <file>             Run EvalSuites from a file
+  helix trace <run_id>          View a trace
+  helix eval run                Run eval suite
+  helix cache stats             Cache statistics
+  helix cost --all              Cost report
+  helix models                  List models with pricing
+  helix replay <run_id>         Interactive failure replay
 """
 
 from __future__ import annotations
@@ -69,6 +72,35 @@ def main() -> None:
     replay_p = sub.add_parser("replay", help="Interactive failure replay")
     replay_p.add_argument("run_id", help="Run ID to replay")
 
+    serve_p = sub.add_parser("serve", help="Expose an agent as a FastAPI HTTP service")
+    serve_p.add_argument("file", help="Python file containing an agent (e.g. my_agent.py)")
+    serve_p.add_argument(
+        "--object", default="agent", help="Name of the agent variable (default: agent)"
+    )
+    serve_p.add_argument("--host", default="0.0.0.0", help="Bind host (default: 0.0.0.0)")
+    serve_p.add_argument("--port", type=int, default=8080, help="Port to listen on (default: 8080)")
+    serve_p.add_argument("--reload", action="store_true", help="Auto-reload on file change")
+
+    new_p = sub.add_parser("new", help="Scaffold a new Helix agent project")
+    new_p.add_argument("name", help="Project directory name")
+    new_p.add_argument(
+        "--template",
+        default="basic",
+        choices=["basic", "web-researcher", "workflow", "team", "rag"],
+        help="Project template (default: basic)",
+    )
+
+    test_p = sub.add_parser("test", help="Run EvalSuites from a Python file")
+    test_p.add_argument("file", help="Python file containing EvalSuite objects")
+    test_p.add_argument(
+        "--gate",
+        type=float,
+        default=None,
+        metavar="PASS_RATE",
+        help="Fail if overall pass rate is below this value (0.0-1.0)",
+    )
+    test_p.add_argument("--verbose", action="store_true", help="Show per-case results")
+
     args = parser.parse_args()
     asyncio.run(_dispatch(args))
 
@@ -94,6 +126,12 @@ async def _dispatch(args: argparse.Namespace) -> None:
         await _cmd_models()
     elif cmd == "replay":
         await _cmd_replay(args)
+    elif cmd == "serve":
+        await _cmd_serve(args)
+    elif cmd == "new":
+        await _cmd_new(args)
+    elif cmd == "test":
+        await _cmd_test(args)
 
 
 async def _cmd_doctor() -> None:
@@ -363,6 +401,422 @@ async def _cmd_replay(args: argparse.Namespace) -> None:
         print(f"Trace not found: {args.run_id}", file=sys.stderr)
         sys.exit(1)
     print(replay.summary())
+
+
+# ---------------------------------------------------------------------------
+# helix serve
+# ---------------------------------------------------------------------------
+
+
+async def _cmd_serve(args: argparse.Namespace) -> None:
+    """Launch an agent file as a FastAPI HTTP service."""
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"Error: File not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        import uvicorn  # noqa: F401
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        print(
+            "Error: 'helix serve' requires fastapi and uvicorn.\n"
+            "Install them with:  pip install fastapi uvicorn",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Import the agent object from the file
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_helix_serve_module", file_path)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+
+    agent_obj = getattr(module, args.object, None)
+    if agent_obj is None:
+        print(
+            f"Error: Could not find '{args.object}' in {args.file}.\n"
+            f"Use --object to specify the variable name.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    from fastapi import FastAPI
+    from fastapi.responses import StreamingResponse
+    from pydantic import BaseModel
+
+    app = FastAPI(
+        title=getattr(agent_obj, "name", "Helix Agent"),
+        description="Helix Agent HTTP API",
+        version="1.0.0",
+    )
+
+    class RunRequest(BaseModel):
+        task: str
+        session_id: str | None = None
+
+    @app.post("/run", summary="Run the agent on a task")
+    async def run_agent(body: RunRequest):
+        result = await agent_obj.run(body.task, session_id=body.session_id)
+        return {
+            "output": result.output,
+            "cost_usd": result.cost_usd,
+            "steps": result.steps,
+            "tool_calls": result.tool_calls,
+            "run_id": result.run_id,
+            "model_used": result.model_used,
+            "error": result.error,
+        }
+
+    @app.get("/stream", summary="Stream the agent response (SSE)")
+    async def stream_agent(task: str):
+        async def gen():
+            async for chunk in agent_obj.stream(task):
+                yield f"data: {chunk}\n\n"
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @app.get("/info", summary="Agent metadata")
+    def agent_info():
+        cfg = getattr(agent_obj, "_config", None)
+        return {
+            "name": getattr(agent_obj, "name", str(agent_obj)),
+            "role": getattr(cfg, "role", "") if cfg else "",
+            "goal": getattr(cfg, "goal", "") if cfg else "",
+            "agent_id": getattr(agent_obj, "agent_id", ""),
+        }
+
+    @app.get("/tools", summary="Available tool schemas")
+    def list_tools():
+        registry = getattr(agent_obj, "_registry", None)
+        if registry is None:
+            return []
+        return [t.to_llm_schema() for t in registry.all()]
+
+    import uvicorn
+
+    print("\nHelix Agent Server")
+    print(f"  Agent : {getattr(agent_obj, 'name', args.object)}")
+    print(f"  File  : {args.file}")
+    print(f"  URL   : http://{args.host}:{args.port}")
+    print("\nEndpoints:")
+    print("  POST /run     — run the agent")
+    print("  GET  /stream  — streaming response (SSE)")
+    print("  GET  /info    — agent metadata")
+    print("  GET  /tools   — available tools")
+    print("  GET  /docs    — Swagger UI\n")
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+    )
+
+
+# ---------------------------------------------------------------------------
+# helix new
+# ---------------------------------------------------------------------------
+
+_TEMPLATES: dict[str, dict[str, str]] = {
+    "basic": {
+        "main.py": '''\
+"""
+{name} — a minimal Helix agent.
+
+Run: python main.py
+"""
+
+import helix
+
+agent = helix.Agent(
+    name="{Name}",
+    role="Assistant",
+    goal="Answer questions clearly and concisely.",
+)
+
+result = helix.run(agent, "Hello! What can you do?")
+print(result.output)
+''',
+        "tools/__init__.py": "",
+        "evals/__init__.py": "",
+        "evals/test_agent.py": '''\
+"""
+{name} — eval suite.
+
+Run: helix test evals/test_agent.py
+"""
+
+import helix
+from helix.eval.suite import EvalSuite
+from main import agent
+
+suite = EvalSuite("{name}")
+
+
+@suite.case
+def hello():
+    from helix.config import EvalCase
+    return EvalCase(
+        input="Say hello in one sentence.",
+        expected_facts=["hello"],
+        max_cost_usd=0.05,
+    )
+
+
+if __name__ == "__main__":
+    result = helix.run(agent, "placeholder")  # warm up
+    import asyncio
+    run_result = asyncio.run(suite.run(agent, verbose=True))
+    suite.assert_pass_rate(0.80, run_result)
+    print(f"\\nPass rate: {{run_result.pass_rate:.0%}}")
+''',
+        "README.md": """\
+# {Name}
+
+A Helix agent project.
+
+## Quick start
+
+```bash
+pip install helix-framework
+python main.py
+```
+
+## Run evals
+
+```bash
+helix test evals/test_agent.py
+```
+""",
+    },
+    "web-researcher": {
+        "main.py": '''\
+"""
+{name} — web research agent.
+
+Run: python main.py
+"""
+
+import helix
+from helix.presets import web_researcher
+
+agent = web_researcher(name="{Name}", budget_usd=0.50)
+
+result = helix.run(agent, "What are the top 3 AI news stories today?")
+print(result.output)
+print(f"\\nCost: ${{result.cost_usd:.4f}} | Steps: {{result.steps}}")
+''',
+        "tools/__init__.py": "",
+        "evals/__init__.py": "",
+        "README.md": "# {Name}\n\nA Helix web-researcher agent.\n",
+    },
+    "workflow": {
+        "main.py": '''\
+"""
+{name} — multi-step workflow.
+
+Run: python main.py
+"""
+
+import helix
+from helix.core.workflow import Workflow, step
+
+
+@step(name="gather", retry=1)
+async def gather(topic: str) -> dict:
+    return {{"topic": topic, "data": f"Data about {{topic}}"}}
+
+
+@step(name="analyse")
+async def analyse(data: dict) -> dict:
+    return {{**data, "insights": [f"Insight about {{data['topic']}}"]}}
+
+
+@step(name="report")
+async def report(data: dict) -> str:
+    lines = [f"# Report: {{data['topic']}}"]
+    for insight in data.get("insights", []):
+        lines.append(f"- {{insight}}")
+    return "\\n".join(lines)
+
+
+pipeline = (
+    Workflow("{name}-pipeline")
+    .then(gather)
+    .then(analyse)
+    .then(report)
+    .with_budget(1.00)
+    .on_step(lambda name, out: print(f"  ✓ {{name}}"))
+)
+
+result = pipeline.run_sync("Renewable energy")
+print(result.final_output)
+print(f"\\nDuration: {{result.duration_s:.2f}}s")
+''',
+        "README.md": "# {Name}\n\nA Helix workflow project.\n",
+    },
+}
+
+# Add team and rag templates with minimal stubs
+_TEMPLATES["team"] = {
+    "main.py": '''\
+"""
+{name} — multi-agent team.
+
+Run: python main.py
+"""
+
+import helix
+
+researcher = helix.Agent(
+    name="Researcher", role="Research analyst",
+    goal="Gather facts and cite sources.",
+    budget=helix.BudgetConfig(budget_usd=0.50),
+)
+writer = helix.Agent(
+    name="Writer", role="Content writer",
+    goal="Write clear, engaging articles.",
+    budget=helix.BudgetConfig(budget_usd=0.30),
+)
+
+team = helix.Team(
+    name="{name}-team",
+    agents=[researcher, writer],
+    strategy="sequential",
+    budget_usd=1.00,
+)
+
+result = team.run_sync("Write a short article about quantum computing.")
+print(result.final_output)
+''',
+    "README.md": "# {Name}\n\nA Helix multi-agent team project.\n",
+}
+
+_TEMPLATES["rag"] = {
+    "main.py": '''\
+"""
+{name} — knowledge-base (RAG) agent.
+
+Add documents to docs/ then run: python main.py
+"""
+
+import helix
+import helix.tools.builtin as tools
+
+agent = helix.Agent(
+    name="{Name}",
+    role="Knowledge Base Assistant",
+    goal="Answer questions using documents in the docs/ directory.",
+    tools=[tools.read_file],
+    budget=helix.BudgetConfig(budget_usd=0.50),
+)
+
+result = helix.run(agent, "What information is in the docs folder?")
+print(result.output)
+''',
+    "docs/example.txt": "This is an example document. Replace this with your own content.\n",
+    "README.md": "# {Name}\n\nA Helix knowledge-base (RAG) agent.\n\nAdd documents to `docs/` then run `python main.py`.\n",
+}
+
+
+async def _cmd_new(args: argparse.Namespace) -> None:
+    """Scaffold a Helix agent project."""
+    project_name = args.name.strip().replace(" ", "-")
+    Name = project_name.replace("-", " ").title().replace(" ", "")
+    template = _TEMPLATES.get(args.template, _TEMPLATES["basic"])
+
+    project_dir = Path(project_name)
+    if project_dir.exists():
+        print(f"Error: Directory '{project_name}' already exists.", file=sys.stderr)
+        sys.exit(1)
+
+    project_dir.mkdir(parents=True)
+
+    for rel_path, content in template.items():
+        full_path = project_dir / rel_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        rendered = content.replace("{name}", project_name).replace("{Name}", Name)
+        full_path.write_text(rendered, encoding="utf-8")
+
+    print(f"\n✓ Created '{project_name}/' with template '{args.template}'\n")
+    print("Next steps:")
+    print(f"  cd {project_name}")
+    print("  helix doctor         # check your API keys")
+    print("  python main.py       # run the agent")
+    if "evals" in " ".join(template.keys()):
+        print("  helix test evals/test_agent.py   # run evals")
+
+
+# ---------------------------------------------------------------------------
+# helix test
+# ---------------------------------------------------------------------------
+
+
+async def _cmd_test(args: argparse.Namespace) -> None:
+    """Run all EvalSuites found in a Python file."""
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"Error: File not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_helix_test_module", file_path)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    try:
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+    except Exception as e:
+        print(f"Error loading {args.file}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Discover EvalSuite objects and agent variables in the module
+    from helix.core.agent import Agent
+    from helix.eval.suite import EvalSuite
+
+    suites: list[tuple[EvalSuite, Agent]] = []
+    agent_obj: Agent | None = None
+
+    for attr_name in dir(module):
+        obj = getattr(module, attr_name)
+        if isinstance(obj, Agent):
+            agent_obj = obj
+        if isinstance(obj, EvalSuite):
+            suites.append((obj, None))  # type: ignore[arg-type]
+
+    if not suites:
+        print("No EvalSuite objects found in the file.")
+        sys.exit(0)
+
+    if agent_obj is None:
+        print("Error: No helix.Agent found in the file.", file=sys.stderr)
+        sys.exit(1)
+
+    total_pass = 0
+    total_fail = 0
+    all_passed = True
+
+    for suite, _ in suites:
+        print(f"\nRunning suite: {suite.name} ({len(suite._cases)} cases)")
+        run_result = await suite.run(agent_obj, verbose=args.verbose)
+        total_pass += run_result.pass_count
+        total_fail += run_result.fail_count
+        icon = "✓" if run_result.pass_rate >= (args.gate or 0) else "✗"
+        print(
+            f"  {icon} {run_result.pass_count}/{run_result.pass_count + run_result.fail_count} passed  ({run_result.pass_rate:.0%})  ${run_result.total_cost_usd:.4f}"
+        )
+
+        if args.gate and run_result.pass_rate < args.gate:
+            all_passed = False
+
+    total = total_pass + total_fail
+    overall = total_pass / total if total > 0 else 0.0
+    print(f"\nOverall: {total_pass}/{total} ({overall:.0%})")
+
+    if not all_passed:
+        print(f"\nFAIL: pass rate {overall:.0%} is below gate {args.gate:.0%}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

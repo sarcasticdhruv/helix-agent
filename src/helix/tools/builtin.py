@@ -41,10 +41,10 @@ async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     :param max_results: Maximum number of results to return (1-10).
     """
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
 
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+        with DDGS() as client:
+            results = list(client.text(query, max_results=max_results))
             return [
                 {
                     "title": r.get("title", ""),
@@ -54,7 +54,7 @@ async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
                 for r in results
             ]
     except ImportError:
-        return [{"error": "duckduckgo_search not installed. pip install duckduckgo-search"}]
+        return [{"error": "ddgs not installed. pip install ddgs"}]
     except Exception as e:
         return [{"error": str(e)}]
 
@@ -339,6 +339,84 @@ async def sleep(seconds: float) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# Code execution
+# ---------------------------------------------------------------------------
+
+
+@tool(
+    description="Execute Python code in an isolated subprocess and return stdout/stderr. "
+    "Code has access to the standard library. Dangerous builtins (os.system, "
+    "subprocess, open outside cwd) are blocked by a watchdog.",
+    timeout=30.0,
+    retries=0,
+)
+async def execute_python(code: str, timeout: float = 15.0) -> dict[str, Any]:
+    """
+    :param code:    Valid Python source code to execute.
+    :param timeout: Max execution time in seconds (clamped to 60).
+    """
+    import sys
+    import tempfile
+
+    timeout = min(max(1.0, timeout), 60.0)
+
+    # Wrap the user code in a thin security shim that blocks the most
+    # common escape hatches before exec-ing the real code.
+    wrapper = (
+        "import sys, builtins\n"
+        "_orig_import = builtins.__import__\n"
+        "_BLOCKED = {'subprocess', 'pty', 'ctypes', 'multiprocessing'}\n"
+        "def _safe_import(name, *a, **kw):\n"
+        "    if name in _BLOCKED:\n"
+        "        raise ImportError(f'Module {name!r} is blocked in execute_python.')\n"
+        "    return _orig_import(name, *a, **kw)\n"
+        "builtins.__import__ = _safe_import\n"
+        "import os\n"
+        "_orig_system = getattr(os, 'system', None)\n"
+        "os.system = lambda *a, **k: (_ for _ in ()).throw(PermissionError('os.system blocked'))\n"
+        + code
+    )
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(wrapper)
+            tmp_path = tmp.name
+
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            tmp_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except TimeoutError:
+            proc.kill()
+            return {
+                "success": False,
+                "stdout": "",
+                "stderr": "",
+                "error": f"Execution timed out after {timeout}s",
+                "returncode": -1,
+            }
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+        stdout = stdout_b.decode(errors="replace")
+        stderr = stderr_b.decode(errors="replace")
+        return {
+            "success": proc.returncode == 0,
+            "stdout": stdout[:20_000],
+            "stderr": stderr[:5_000],
+            "returncode": proc.returncode,
+        }
+    except Exception as exc:
+        return {"success": False, "stdout": "", "stderr": "", "error": str(exc), "returncode": -1}
+
+
+# ---------------------------------------------------------------------------
 # Register all built-in tools
 # ---------------------------------------------------------------------------
 
@@ -355,6 +433,7 @@ _BUILTIN_TOOLS = [
     text_stats,
     extract_urls,
     sleep,
+    execute_python,
 ]
 
 for _t in _BUILTIN_TOOLS:

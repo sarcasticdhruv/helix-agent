@@ -60,15 +60,24 @@ class EvalSuite:
     # Case registration
     # ------------------------------------------------------------------
 
-    def case(self, fn: Callable) -> EvalSuite:
-        """Decorator to register an EvalCase factory function."""
+    def case(self, fn: Callable) -> Callable:
+        """
+        Decorator to register an EvalCase factory function.
+
+        The decorated function is returned unchanged so it can be
+        called again independently (e.g. inside unit tests).
+
+        Example::
+
+            @suite.case
+            def capitals():
+                return EvalCase(input="Capital of France?", expected_facts=["Paris"])
+        """
         result = fn()
         if isinstance(result, EvalCase):
-            # Use function name as case name if not set
-            if result.name == result.name:  # always true — just ensure name is set
-                pass
-            self._cases.append(result.model_copy(update={"name": fn.__name__}))
-        return self
+            case_name = result.name or fn.__name__
+            self._cases.append(result.model_copy(update={"name": case_name}))
+        return fn  # return fn, not self, so decorator syntax works correctly
 
     def add_case(self, case: EvalCase) -> EvalSuite:
         """Register a case directly."""

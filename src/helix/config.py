@@ -379,7 +379,7 @@ class ExpectedTrajectory(BaseModel):
 class EvalCase(BaseModel):
     """A single evaluation test case."""
 
-    name: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    name: str = ""  # defaults to fn.__name__ when registered via @suite.case
     input: str
     expected_tools: list[str] = Field(default_factory=list)
     expected_facts: list[str] = Field(default_factory=list)

@@ -10,9 +10,12 @@ State is checkpointed after every step so workflows can resume after interruptio
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from helix.config import WorkflowConfig
@@ -99,6 +102,65 @@ def step(
     return decorator
 
 
+# ---------------------------------------------------------------------------
+# Typed chain node ADT — replaces the previous list[dict[str, Any]]
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _SequentialNode:
+    step: Step
+
+
+@dataclass
+class _ParallelNode:
+    steps: list[Step]
+
+
+@dataclass
+class _BranchNode:
+    condition: Callable[[Any], bool]
+    if_true: Step
+    if_false: Step
+
+
+@dataclass
+class _LoopNode:
+    step: Step
+    until: Callable[[Any], bool]
+    max_iter: int = 10
+
+
+@dataclass
+class _MapNode:
+    step: Step
+    items_fn: Callable
+
+
+@dataclass
+class _ReduceNode:
+    fn: Callable
+    initial: Any = None
+
+
+@dataclass
+class _HumanReviewNode:
+    prompt: str = "Review required before continuing."
+    risk_level: str = "medium"
+
+
+# Union type for exhaustiveness checking
+ChainNode = (
+    _SequentialNode
+    | _ParallelNode
+    | _BranchNode
+    | _LoopNode
+    | _MapNode
+    | _ReduceNode
+    | _HumanReviewNode
+)
+
+
 class Workflow:
     """
     Fluent workflow builder.
@@ -113,27 +175,39 @@ class Workflow:
             .with_budget(2.00)
         )
         result = await wf.run("What is quantum computing?")
+
+    Checkpoint / resume::
+
+        wf = (
+            Workflow("long-job")
+            .then(step_a)
+            .then(step_b)
+            .with_checkpoint(".helix/checkpoints/long-job")
+        )
+        result = wf.run_sync("input", resume=True)   # skips completed steps
     """
 
     def __init__(self, name: str, config: WorkflowConfig | None = None) -> None:
         self._name = name
         self._config = config or WorkflowConfig(name=name)
-        self._chain: list[dict[str, Any]] = []  # List of {type, steps, kwargs}
+        self._chain: list[ChainNode] = []
         self._budget_usd: float | None = config.budget_usd if config else None
         self._on_failure: str = config.on_failure if config else "fail"
+        self._checkpoint_dir: Path | None = None
+        self._on_step_complete: Callable[[str, Any], None] | None = None
 
     # ------------------------------------------------------------------
     # Builder methods
     # ------------------------------------------------------------------
 
-    def then(self, step_fn: Step | Callable, **kwargs: Any) -> Workflow:
+    def then(self, step_fn: Step | Callable, **_kwargs: Any) -> Workflow:
         """Add a sequential step."""
         s = (
             step_fn
             if isinstance(step_fn, Step)
             else Step(fn=step_fn, name=getattr(step_fn, "__name__", "step"))
         )
-        self._chain.append({"type": "sequential", "step": s})
+        self._chain.append(_SequentialNode(step=s))
         return self
 
     def parallel(self, *step_fns: Step | Callable) -> Workflow:
@@ -142,7 +216,7 @@ class Workflow:
             (s if isinstance(s, Step) else Step(fn=s, name=getattr(s, "__name__", "step")))
             for s in step_fns
         ]
-        self._chain.append({"type": "parallel", "steps": steps})
+        self._chain.append(_ParallelNode(steps=steps))
         return self
 
     def map(self, step_fn: Step | Callable, items_fn: Callable) -> Workflow:
@@ -152,12 +226,12 @@ class Workflow:
             if isinstance(step_fn, Step)
             else Step(fn=step_fn, name=getattr(step_fn, "__name__", "map_step"))
         )
-        self._chain.append({"type": "map", "step": s, "items_fn": items_fn})
+        self._chain.append(_MapNode(step=s, items_fn=items_fn))
         return self
 
     def reduce(self, reduce_fn: Callable, initial: Any = None) -> Workflow:
         """Reduce the current output list to a single value."""
-        self._chain.append({"type": "reduce", "fn": reduce_fn, "initial": initial})
+        self._chain.append(_ReduceNode(fn=reduce_fn, initial=initial))
         return self
 
     def branch(
@@ -169,14 +243,7 @@ class Workflow:
         """Branch based on a condition applied to the current input."""
         true_step = if_true if isinstance(if_true, Step) else Step(fn=if_true, name="if_true")
         false_step = if_false if isinstance(if_false, Step) else Step(fn=if_false, name="if_false")
-        self._chain.append(
-            {
-                "type": "conditional",
-                "condition": condition,
-                "if_true": true_step,
-                "if_false": false_step,
-            }
-        )
+        self._chain.append(_BranchNode(condition=condition, if_true=true_step, if_false=false_step))
         return self
 
     def loop(
@@ -191,7 +258,7 @@ class Workflow:
             if isinstance(step_fn, Step)
             else Step(fn=step_fn, name=getattr(step_fn, "__name__", "loop_step"))
         )
-        self._chain.append({"type": "loop", "step": s, "until": until, "max_iter": max_iter})
+        self._chain.append(_LoopNode(step=s, until=until, max_iter=max_iter))
         return self
 
     def human_review(
@@ -200,13 +267,7 @@ class Workflow:
         risk_level: str = "medium",
     ) -> Workflow:
         """Insert a HITL checkpoint — workflow pauses until a human approves."""
-        self._chain.append(
-            {
-                "type": "human_review",
-                "prompt": prompt,
-                "risk_level": risk_level,
-            }
-        )
+        self._chain.append(_HumanReviewNode(prompt=prompt, risk_level=risk_level))
         return self
 
     def with_budget(self, usd: float) -> Workflow:
@@ -218,30 +279,94 @@ class Workflow:
         self._on_failure = strategy
         return self
 
+    def with_checkpoint(self, directory: str) -> Workflow:
+        """
+        Enable step-level checkpointing to ``directory``.
+
+        On ``run_sync(input, resume=True)`` already-completed steps are
+        loaded from disk and skipped, so long-running workflows safely
+        survive process restarts.
+
+        Example::
+
+            wf = Workflow("etl").then(extract).then(transform).then(load)
+            wf.with_checkpoint(".helix/checkpoints/etl")
+            result = wf.run_sync(input_data, resume=True)
+        """
+        self._checkpoint_dir = Path(directory)
+        self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def on_step(self, callback: Callable[[str, Any], None]) -> Workflow:
+        """
+        Register a callback invoked after every step completes.
+
+        The callback receives ``(step_name: str, output: Any)``.
+        Useful for logging or progress bars without full observability.
+
+        Example::
+
+            wf.on_step(lambda name, out: print(f"✓ {name}: {str(out)[:60]}"))
+        """
+        self._on_step_complete = callback
+        return self
+
     # ------------------------------------------------------------------
     # Execution
     # ------------------------------------------------------------------
 
-    async def run(self, input: Any) -> WorkflowResult:
+    async def run(self, input: Any, *, resume: bool = False) -> WorkflowResult:
+        """
+        Execute the workflow.
+
+        Args:
+            input:  The initial input passed to the first step.
+            resume: If ``True`` and a checkpoint directory is configured,
+                    reload previously completed steps from disk.
+        """
         start = time.time()
         current = input
         step_results: list[StepResult] = []
         total_cost = 0.0
 
+        # Load checkpoint if resuming
+        checkpoint_state: dict[str, Any] = {}
+        if resume and self._checkpoint_dir:
+            checkpoint_state = self._load_checkpoint()
+            if checkpoint_state:
+                current = checkpoint_state.get("last_output", input)
+
         for node in self._chain:
+            node_name = self._node_name(node)
+
+            # Skip already-completed steps when resuming
+            if resume and node_name in checkpoint_state.get("completed", []):
+                step_results.append(
+                    StepResult(
+                        name=node_name,
+                        output=checkpoint_state["outputs"].get(node_name),
+                    )
+                )
+                current = checkpoint_state["outputs"].get(node_name, current)
+                continue
+
             try:
                 current, sr = await self._execute_node(node, current)
                 step_results.append(sr)
                 total_cost += sr.cost_usd
+
+                # Checkpoint after each successful step
+                if self._checkpoint_dir:
+                    self._save_checkpoint(node_name, current, step_results)
+
+                # Step callback
+                if self._on_step_complete:
+                    with contextlib.suppress(Exception):
+                        self._on_step_complete(node_name, current)
+
             except Exception as e:
                 if self._on_failure == "continue":
-                    step_results.append(
-                        StepResult(
-                            name=node.get("type", "unknown"),
-                            output=None,
-                            error=str(e),
-                        )
-                    )
+                    step_results.append(StepResult(name=node_name, output=None, error=str(e)))
                     continue
                 return WorkflowResult(
                     workflow_name=self._name,
@@ -252,6 +377,10 @@ class Workflow:
                     error=str(e),
                 )
 
+        # Clear checkpoint on successful completion
+        if self._checkpoint_dir:
+            self._clear_checkpoint()
+
         return WorkflowResult(
             workflow_name=self._name,
             final_output=current,
@@ -260,71 +389,136 @@ class Workflow:
             duration_s=time.time() - start,
         )
 
-    def run_sync(self, input: Any) -> WorkflowResult:
-        return asyncio.run(self.run(input))
+    def run_sync(self, input: Any, *, resume: bool = False) -> WorkflowResult:
+        """Synchronous wrapper. Safe to call from plain scripts."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
 
-    async def _execute_node(self, node: dict[str, Any], current: Any) -> tuple[Any, StepResult]:
-        node_start = time.time()
-        node_type = node["type"]
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(asyncio.run, self.run(input, resume=resume))
+                    return future.result()
+            return loop.run_until_complete(self.run(input, resume=resume))
+        except RuntimeError:
+            return asyncio.run(self.run(input, resume=resume))
 
-        if node_type == "sequential":
-            s: Step = node["step"]
-            output = await s.execute(current)
+    # ------------------------------------------------------------------
+    # Internal execution dispatch — typed, exhaustive
+    # ------------------------------------------------------------------
+
+    async def _execute_node(self, node: ChainNode, current: Any) -> tuple[Any, StepResult]:
+        t0 = time.time()
+
+        if isinstance(node, _SequentialNode):
+            output = await node.step.execute(current)
             return output, StepResult(
-                name=s.name, output=output, duration_s=time.time() - node_start
+                name=node.step.name, output=output, duration_s=time.time() - t0
             )
 
-        if node_type == "parallel":
-            steps: list[Step] = node["steps"]
-            outputs = await asyncio.gather(*[s.execute(current) for s in steps])
+        if isinstance(node, _ParallelNode):
+            outputs = await asyncio.gather(*[s.execute(current) for s in node.steps])
             return list(outputs), StepResult(
-                name=f"parallel({','.join(s.name for s in steps)})",
+                name=f"parallel({','.join(s.name for s in node.steps)})",
                 output=list(outputs),
-                duration_s=time.time() - node_start,
+                duration_s=time.time() - t0,
             )
 
-        if node_type == "map":
-            s = node["step"]
-            items_fn = node["items_fn"]
-            items = items_fn(current) if callable(items_fn) else current
-            outputs = await asyncio.gather(*[s.execute(item) for item in items])
-            return list(outputs), StepResult(name=f"map({s.name})", output=list(outputs))
+        if isinstance(node, _MapNode):
+            items = node.items_fn(current) if callable(node.items_fn) else current
+            outputs = await asyncio.gather(*[node.step.execute(item) for item in items])
+            return list(outputs), StepResult(
+                name=f"map({node.step.name})", output=list(outputs), duration_s=time.time() - t0
+            )
 
-        if node_type == "reduce":
-            fn = node["fn"]
-            initial = node.get("initial")
+        if isinstance(node, _ReduceNode):
             if not isinstance(current, list):
                 return current, StepResult(name="reduce", output=current)
-            result = initial
+            result = node.initial
             for item in current:
-                if asyncio.iscoroutinefunction(fn):
-                    result = await fn(result, item)
+                if asyncio.iscoroutinefunction(node.fn):
+                    result = await node.fn(result, item)
                 else:
-                    result = fn(result, item)
-            return result, StepResult(name="reduce", output=result)
+                    result = node.fn(result, item)
+            return result, StepResult(name="reduce", output=result, duration_s=time.time() - t0)
 
-        if node_type == "conditional":
-            condition = node["condition"]
-            branch = node["if_true"] if condition(current) else node["if_false"]
-            output = await branch.execute(current)
-            return output, StepResult(name=f"branch({branch.name})", output=output)
-
-        if node_type == "loop":
-            s = node["step"]
-            until = node["until"]
-            max_iter = node.get("max_iter", 10)
-            result = current
-            for _i in range(max_iter):
-                result = await s.execute(result)
-                if until(result):
-                    break
-            return result, StepResult(name=f"loop({s.name})", output=result)
-
-        if node_type == "human_review":
-            # For now: pause and log (full HITL requires HITLController injection)
-            print(
-                f"\n[HITL] {node.get('prompt', 'Review required')} (auto-approved in workflow mode)"
+        if isinstance(node, _BranchNode):
+            chosen = node.if_true if node.condition(current) else node.if_false
+            output = await chosen.execute(current)
+            return output, StepResult(
+                name=f"branch({chosen.name})", output=output, duration_s=time.time() - t0
             )
-            return current, StepResult(name="human_review", output=current)
 
-        raise WorkflowError(self._name, node_type, "Unknown node type")
+        if isinstance(node, _LoopNode):
+            result = current
+            for _ in range(node.max_iter):
+                result = await node.step.execute(result)
+                if node.until(result):
+                    break
+            return result, StepResult(
+                name=f"loop({node.step.name})", output=result, duration_s=time.time() - t0
+            )
+
+        if isinstance(node, _HumanReviewNode):
+            print(f"\n[HITL] {node.prompt} (auto-approved in workflow mode)")
+            return current, StepResult(
+                name="human_review", output=current, duration_s=time.time() - t0
+            )
+
+        raise WorkflowError(self._name, repr(node), "Unknown node type")
+
+    # ------------------------------------------------------------------
+    # Checkpoint helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _node_name(node: ChainNode) -> str:
+        if isinstance(node, _SequentialNode):
+            return node.step.name
+        if isinstance(node, _ParallelNode):
+            return f"parallel({','.join(s.name for s in node.steps)})"
+        if isinstance(node, _MapNode):
+            return f"map({node.step.name})"
+        if isinstance(node, _ReduceNode):
+            return "reduce"
+        if isinstance(node, _BranchNode):
+            return "branch"
+        if isinstance(node, _LoopNode):
+            return f"loop({node.step.name})"
+        if isinstance(node, _HumanReviewNode):
+            return "human_review"
+        return "unknown"
+
+    def _checkpoint_path(self) -> Path:
+        assert self._checkpoint_dir is not None
+        return self._checkpoint_dir / f"{self._name}.json"
+
+    def _save_checkpoint(
+        self, last_step: str, last_output: Any, completed_steps: list[StepResult]
+    ) -> None:
+        try:
+            state = {
+                "completed": [s.name for s in completed_steps],
+                "last_output": last_output,
+                "outputs": {s.name: s.output for s in completed_steps},
+            }
+            self._checkpoint_path().write_text(json.dumps(state, default=str))
+        except Exception:
+            pass
+
+    def _load_checkpoint(self) -> dict[str, Any]:
+        try:
+            path = self._checkpoint_path()
+            if path.exists():
+                return json.loads(path.read_text())
+        except Exception:
+            pass
+        return {}
+
+    def _clear_checkpoint(self) -> None:
+        try:
+            cp = self._checkpoint_path()
+            if cp.exists():
+                cp.unlink()
+        except Exception:
+            pass

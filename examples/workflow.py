@@ -5,9 +5,7 @@ Workflow example — sequential and parallel step execution.
 Run with:  python examples/workflow.py
 """
 
-import helix
 from helix.core.workflow import Workflow, step
-
 
 # --- Define steps -----------------------------------------------------------
 

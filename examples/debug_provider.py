@@ -10,8 +10,9 @@ import os
 import sys
 
 # Load saved keys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from helix.config_store import apply_saved_config, best_available_model
+
 apply_saved_config()
 
 
@@ -26,6 +27,7 @@ async def test_gemini():
     # Test 1: import
     try:
         import google.generativeai as genai
+
         print(f"  SDK version: {genai.__version__ if hasattr(genai, '__version__') else 'unknown'}")
     except ImportError:
         print("✗ google-generativeai not installed. Run: pip install google-generativeai")
@@ -37,7 +39,11 @@ async def test_gemini():
 
     # Test 3: list models (validates key)
     try:
-        models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in m.supported_generation_methods
+        ]
         gemini_models = [m for m in models if "gemini" in m]
         print(f"  Models available: {len(gemini_models)} gemini models")
         if gemini_models:
@@ -95,10 +101,10 @@ async def main():
     if result and result is not True:
         # Got a working model name
         working_model = result
-        print(f"\n{'='*60}")
-        print(f"Action needed:")
+        print(f"\n{'=' * 60}")
+        print("Action needed:")
         print(f"  helix config set HELIX_DEFAULT_MODEL {working_model}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
 
 asyncio.run(main())

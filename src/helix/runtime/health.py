@@ -18,10 +18,10 @@ _PROVIDERS: list[tuple[str, str, str, list[str], str]] = [
     ("anthropic", "anthropic", "anthropic", ["ANTHROPIC_API_KEY"], "Claude Opus / Sonnet / Haiku"),
     (
         "gemini",
-        "google.generativeai",
-        "google-generativeai",
+        "google.genai",
+        "google-genai",
         ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-        "Gemini 2.0 Flash, 1.5 Pro",
+        "Gemini 2.5 Flash, 2.0 Flash, 2.5 Pro",
     ),
     ("groq", "groq", "groq", ["GROQ_API_KEY"], "Llama, Mixtral, Gemma (ultra-fast)"),
     ("mistral", "mistralai", "mistralai", ["MISTRAL_API_KEY"], "Mistral Large / Small / Codestral"),
@@ -45,7 +45,7 @@ _PROVIDERS: list[tuple[str, str, str, list[str], str]] = [
 _OTHER_PACKAGES = [
     ("tiktoken", "tiktoken", "accurate token counting"),
     ("httpx", "httpx", "fetch_url tool + Ollama + WebhookTransport"),
-    ("duckduckgo_search", "duckduckgo-search", "web_search built-in tool"),
+    ("ddgs", "ddgs", "web_search built-in tool"),
     ("redis", "redis", "Redis cache/session backend, QueueTransport"),
     ("pydantic", "pydantic>=2.0", "core — required"),
 ]
@@ -55,7 +55,7 @@ def _pkg_installed(import_name: str) -> bool:
     """
     Check whether a package is importable.
     Uses importlib.import_module directly so dotted names like
-    'google.generativeai' work correctly as namespace packages.
+    'google.genai' work correctly as namespace packages.
     """
     try:
         import importlib

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-framework"
-version = "0.3.3"
+version = "0.3.4"
 description = "Production-grade AI agent framework — cost governance, memory, caching, multi-agent teams, and built-in eval"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -33,7 +33,7 @@ dependencies = ["pydantic>=2.0"]
 
 [project.optional-dependencies]
 # ── Individual providers ──────────────────────────────────────────────────────
-gemini      = ["google-generativeai>=0.8"]
+gemini      = ["google-genai>=1.0"]
 openai      = ["openai>=1.0"]
 anthropic   = ["anthropic>=0.20"]
 groq        = ["groq>=0.9"]
@@ -46,7 +46,7 @@ deepseek    = ["openai>=1.0"]        # DeepSeek uses the openai package
 
 # ── All cloud API providers bundled ──────────────────────────────────────────
 providers = [
-    "google-generativeai>=0.8",
+    "google-genai>=1.0",
     "openai>=1.0",
     "anthropic>=0.20",
     "groq>=0.9",
@@ -58,7 +58,7 @@ providers = [
 # ── Other optional features ───────────────────────────────────────────────────
 tiktoken = ["tiktoken>=0.5"]
 http     = ["httpx>=0.25"]
-search   = ["duckduckgo-search>=3.9"]
+search   = ["ddgs>=9.0"]
 redis    = ["redis>=5.0"]
 schedule = ["croniter>=2.0"]
 
@@ -73,7 +73,7 @@ dev = [
 
 # ── Full install — everything ─────────────────────────────────────────────────
 all = [
-    "google-generativeai>=0.8",
+    "google-genai>=1.0",
     "openai>=1.0",
     "anthropic>=0.20",
     "groq>=0.9",
@@ -82,7 +82,7 @@ all = [
     "together>=1.2",
     "tiktoken>=0.5",
     "httpx>=0.25",
-    "duckduckgo-search>=3.9",
+    "ddgs>=9.0",
     "redis>=5.0",
     "croniter>=2.0",
 ]

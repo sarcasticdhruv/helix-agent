@@ -438,3 +438,43 @@ async def execute_tool(
 # ---------------------------------------------------------------------------
 
 registry = ToolRegistry()
+
+
+# ---------------------------------------------------------------------------
+# Tool discovery
+# ---------------------------------------------------------------------------
+
+
+def discover_tools(module_or_object: Any) -> list[RegisteredTool]:
+    """
+    Scan a module or object for all ``@helix.tool``-decorated functions
+    and return them as a list ready to pass to ``Agent(tools=...)``.
+
+    Works with:
+    - Imported modules (``import my_tools; discover_tools(my_tools)``)
+    - Package namespaces (``discover_tools(my_company.tools)``)
+    - Class instances with bound tool methods
+
+    Example::
+
+        import helix
+        import my_company.tools as company_tools
+
+        agent = helix.Agent(
+            name="Worker",
+            role="Internal tool user",
+            goal="Use any available company tool.",
+            tools=helix.discover_tools(company_tools),
+        )
+    """
+    import inspect as _inspect
+
+    found: list[RegisteredTool] = []
+    seen_names: set[str] = set()
+
+    for _attr_name, obj in _inspect.getmembers(module_or_object):
+        if isinstance(obj, RegisteredTool) and obj.name not in seen_names:
+            found.append(obj)
+            seen_names.add(obj.name)
+
+    return found

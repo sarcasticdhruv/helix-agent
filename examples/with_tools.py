@@ -4,6 +4,8 @@ examples/with_tools.py  —  agent with custom tools and budget.
 Run: python examples/with_tools.py
 """
 
+from datetime import UTC
+
 import helix
 
 
@@ -13,11 +15,18 @@ async def calculator(expression: str) -> dict:
     :param expression: e.g. '2 ** 10' or 'sqrt(144)'
     """
     import math
+
     safe = {
         "__builtins__": {},
-        "sqrt": math.sqrt, "log": math.log, "sin": math.sin,
-        "cos": math.cos, "pi": math.pi, "e": math.e,
-        "abs": abs, "round": round, "pow": pow,
+        "sqrt": math.sqrt,
+        "log": math.log,
+        "sin": math.sin,
+        "cos": math.cos,
+        "pi": math.pi,
+        "e": math.e,
+        "abs": abs,
+        "round": round,
+        "pow": pow,
     }
     try:
         result = eval(expression, safe)  # noqa: S307
@@ -28,8 +37,9 @@ async def calculator(expression: str) -> dict:
 
 @helix.tool(description="Get the current UTC date and time.")
 async def get_time() -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
+    from datetime import datetime
+
+    now = datetime.now(UTC)
     return {"utc": now.isoformat(), "date": now.strftime("%Y-%m-%d")}
 
 

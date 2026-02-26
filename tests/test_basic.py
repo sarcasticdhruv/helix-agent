@@ -17,6 +17,7 @@ from helix.errors import BudgetExceededError
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def minimal_config():
     return AgentConfig(
@@ -25,6 +26,7 @@ def minimal_config():
         goal="run tests",
         mode=AgentMode.EXPLORE,
     )
+
 
 @pytest.fixture
 def budget_config():
@@ -39,10 +41,11 @@ def budget_config():
 
 # ── Config tests ───────────────────────────────────────────────────────────────
 
+
 class TestConfig:
     def test_agent_config_defaults(self, minimal_config):
         assert minimal_config.name == "test-agent"
-        assert minimal_config.loop_limit == 50       # actual default
+        assert minimal_config.loop_limit == 50  # actual default
         assert minimal_config.agent_id is not None
 
     def test_budget_config_validation(self):
@@ -52,7 +55,9 @@ class TestConfig:
     def test_production_requires_budget(self):
         with pytest.raises(ValueError):
             AgentConfig(
-                name="x", role="x", goal="x",
+                name="x",
+                role="x",
+                goal="x",
                 mode=AgentMode.PRODUCTION,
                 budget=None,
             )
@@ -74,6 +79,7 @@ class TestConfig:
 
 # ── Context tests ──────────────────────────────────────────────────────────────
 
+
 class TestContext:
     @pytest.mark.asyncio
     async def test_cost_ledger_gate(self):
@@ -82,7 +88,7 @@ class TestContext:
         assert ledger.budget_pct == pytest.approx(0.50)
 
         with pytest.raises(BudgetExceededError):
-            await ledger.check_gate(0.60)   # must await — it's async
+            await ledger.check_gate(0.60)  # must await — it's async
 
     @pytest.mark.asyncio
     async def test_cost_ledger_no_budget(self):
@@ -107,6 +113,7 @@ class TestContext:
 
 
 # ── Tool tests ─────────────────────────────────────────────────────────────────
+
 
 class TestTools:
     def test_tool_decorator(self):
@@ -145,6 +152,7 @@ class TestTools:
             return "done"
 
         from helix.errors import ToolTimeoutError
+
         with pytest.raises(ToolTimeoutError):
             await slow()
 
@@ -159,6 +167,7 @@ class TestTools:
 
 
 # ── Workflow tests ─────────────────────────────────────────────────────────────
+
 
 class TestWorkflow:
     @pytest.mark.asyncio
@@ -216,6 +225,7 @@ class TestWorkflow:
 
 # ── Team tests ─────────────────────────────────────────────────────────────────
 
+
 class TestTeam:
     @pytest.mark.asyncio
     async def test_team_parallel_mock(self):
@@ -232,7 +242,7 @@ class TestTeam:
             agent_id="a1",
             agent_name="mock",
             duration_s=0.1,
-            tool_calls=0,            # int, not list
+            tool_calls=0,  # int, not list
             cache_hits=0,
             cache_savings_usd=0.0,
             episodes_used=0,
@@ -256,6 +266,7 @@ class TestTeam:
 
 # ── helix.run() sync helper ───────────────────────────────────────────────────
 
+
 class TestSyncRun:
     def test_helix_run_is_callable(self):
         assert callable(helix.run)
@@ -275,6 +286,7 @@ class TestSyncRun:
 
 
 # ── Memory tests ──────────────────────────────────────────────────────────────
+
 
 class TestMemory:
     @pytest.mark.asyncio
@@ -313,6 +325,7 @@ class TestMemory:
 
 
 # ── Cache tests ────────────────────────────────────────────────────────────────
+
 
 class TestCache:
     @pytest.mark.asyncio
@@ -370,6 +383,7 @@ class TestCache:
 
 # ── Safety tests ──────────────────────────────────────────────────────────────
 
+
 class TestSafety:
     def test_permission_scope_allow(self):
         from helix.config import PermissionConfig
@@ -383,6 +397,7 @@ class TestSafety:
         scope.check_tool("calculator")
 
         from helix.errors import PermissionDeniedError
+
         with pytest.raises(PermissionDeniedError):
             scope.check_tool("write_file")
 
@@ -459,6 +474,7 @@ class TestSafety:
 
 
 # ── Eval tests ────────────────────────────────────────────────────────────────
+
 
 class TestEval:
     @pytest.mark.asyncio

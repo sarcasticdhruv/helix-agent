@@ -36,6 +36,8 @@ from helix.config import (
     StructuredOutputConfig,
 )
 from helix.context import ExecutionContext
+from helix.core.hooks import HookEvent, HookFn
+from helix.core.hooks import fire as _fire_hook
 from helix.core.tool import ToolRegistry, execute_tool
 from helix.core.tool import registry as _global_registry
 from helix.errors import (
@@ -112,6 +114,7 @@ class Agent:
         structured_output: StructuredOutputConfig | None = None,
         observability: ObservabilityConfig | None = None,
         system_prompt: str | None = None,
+        on_event: HookFn | None = None,
         **extra_config: Any,
     ) -> None:
         self._config = AgentConfig(
@@ -152,6 +155,7 @@ class Agent:
         self._audit_log: Any | None = None
 
         self._initialized: bool = False
+        self._on_event: HookFn | None = on_event
 
     # ------------------------------------------------------------------
     # Public API
@@ -188,12 +192,29 @@ class Agent:
             result = await self._execute(ctx, task, output_schema=output_schema)
         except BudgetExceededError as e:
             result = self._error_result(ctx, str(e))
+            await _fire_hook(
+                self._on_event,
+                HookEvent(type="error", data={"error": str(e)}, cost_so_far=ctx.cost.spent_usd),
+            )
         except LoopDetectedError as e:
             result = self._error_result(ctx, str(e))
+            await _fire_hook(
+                self._on_event,
+                HookEvent(type="error", data={"error": str(e)}, cost_so_far=ctx.cost.spent_usd),
+            )
         except HelixError as e:
             result = self._error_result(ctx, str(e))
+            await _fire_hook(
+                self._on_event,
+                HookEvent(type="error", data={"error": str(e)}, cost_so_far=ctx.cost.spent_usd),
+            )
         except Exception as e:
-            result = self._error_result(ctx, f"Unexpected error: {e}")
+            msg = f"Unexpected error: {e}"
+            result = self._error_result(ctx, msg)
+            await _fire_hook(
+                self._on_event,
+                HookEvent(type="error", data={"error": msg}, cost_so_far=ctx.cost.spent_usd),
+            )
         finally:
             await self._finalize(ctx)
 
@@ -214,6 +235,41 @@ class Agent:
         except RuntimeError:
             return asyncio.run(self.run(task, **kwargs))
 
+    # ------------------------------------------------------------------
+    # LangChain-compatible aliases
+    # ------------------------------------------------------------------
+
+    async def ainvoke(
+        self,
+        task: str,
+        session_id: str | None = None,
+        output_schema: Any | None = None,
+    ) -> AgentResult:
+        """
+        Async alias for :meth:`run`.  Matches the LangChain ``ainvoke`` API.
+
+        Example::
+
+            result = await agent.ainvoke("Summarise quarterly earnings.")
+        """
+        return await self.run(task, session_id=session_id, output_schema=output_schema)
+
+    def invoke(
+        self,
+        task: str,
+        session_id: str | None = None,
+        output_schema: Any | None = None,
+    ) -> AgentResult:
+        """
+        Sync alias for :meth:`run_sync`.  Matches the LangChain ``invoke`` API.
+
+        Example::
+
+            result = agent.invoke("Summarise quarterly earnings.")
+            print(result.output)
+        """
+        return self.run_sync(task, session_id=session_id, output_schema=output_schema)
+
     async def stream(
         self,
         task: str,
@@ -232,6 +288,21 @@ class Agent:
 
         async for chunk in self._llm_router.stream(messages=messages, model=model):
             yield chunk
+
+    def __or__(self, other: Agent | Any) -> Any:
+        """
+        Pipe two agents together.  Output of ``self`` becomes the task for ``other``.
+
+        Example::
+
+            pipeline = researcher | analyst | writer
+            result = helix.run(pipeline, "Quantum AI 2026")
+        """
+        from helix.core.pipeline import AgentPipeline
+
+        if isinstance(other, AgentPipeline):
+            return AgentPipeline([self] + other.agents)
+        return AgentPipeline([self, other])
 
     def add_tool(self, tool_or_fn: Any) -> Agent:
         """Register an additional tool. Returns self for chaining."""
@@ -294,7 +365,29 @@ class Agent:
         if cache_hit:
             output = cache_hit.response
             ctx.record_cache_hit(cache_hit.saved_usd)
-            return self._build_result(ctx, output, episodes_used=0)
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="cache_hit",
+                    data={"similarity": cache_hit.similarity, "saved_usd": cache_hit.saved_usd},
+                    cost_so_far=0.0,
+                    step=0,
+                ),
+            )
+            result = self._build_result(ctx, output, episodes_used=0)
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="done",
+                    data={
+                        "output_preview": str(output)[:120],
+                        "steps": result.steps,
+                        "cost_usd": result.cost_usd,
+                    },
+                    cost_so_far=result.cost_usd,
+                ),
+            )
+            return result
 
         # 3. Check plan cache — adapt plan template if available
         plan = await self._check_plan_cache(ctx, task)
@@ -309,7 +402,20 @@ class Agent:
         # 6. Store successful plan to plan cache
         await self._store_plan(ctx, task)
 
-        return self._build_result(ctx, output)
+        result = self._build_result(ctx, output)
+        await _fire_hook(
+            self._on_event,
+            HookEvent(
+                type="done",
+                data={
+                    "output_preview": str(output)[:120],
+                    "steps": result.steps,
+                    "cost_usd": result.cost_usd,
+                },
+                cost_so_far=result.cost_usd,
+            ),
+        )
+        return result
 
     async def _reasoning_loop(
         self,
@@ -345,11 +451,31 @@ class Agent:
             messages = ctx.window.as_llm_messages()
             model = ctx.effective_model()
 
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="step_start",
+                    data={"step": ctx.window.step},
+                    cost_so_far=ctx.cost.spent_usd,
+                    step=ctx.window.step,
+                ),
+            )
+
             # Cost gate
             estimated_cost = self._estimate_call_cost(messages, model)
             await ctx.cost.check_gate(estimated_cost)
             if self._config.budget:
                 await self._warn_budget(ctx)
+
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="llm_call",
+                    data={"model": model, "messages": len(messages)},
+                    cost_so_far=ctx.cost.spent_usd,
+                    step=ctx.window.step,
+                ),
+            )
 
             # LLM call
             response = await self._llm_router.complete(
@@ -363,6 +489,20 @@ class Agent:
 
             # Record actual cost
             await ctx.cost.record(self._calculate_actual_cost(response.usage, model))
+
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="llm_response",
+                    data={
+                        "model": model,
+                        "tokens": response.usage.total_tokens,
+                        "finish_reason": response.finish_reason,
+                    },
+                    cost_so_far=ctx.cost.spent_usd,
+                    step=ctx.window.step,
+                ),
+            )
 
             # Audit
             await self._audit(
@@ -386,12 +526,34 @@ class Agent:
             # Cache the response for future semantic lookups
             await self._store_semantic_cache(ctx, task, cleaned, ctx.cost.spent_usd)
 
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="step_end",
+                    data={
+                        "step": ctx.window.step,
+                        "output_preview": cleaned[:120],
+                    },
+                    cost_so_far=ctx.cost.spent_usd,
+                    step=ctx.window.step,
+                ),
+            )
+
             # No tool calls → we're done
             if response.finish_reason == "stop" or not response.tool_calls:
                 break
 
             # Execute tool calls
             for tc in response.tool_calls:
+                await _fire_hook(
+                    self._on_event,
+                    HookEvent(
+                        type="tool_call",
+                        data={"tool_name": tc.tool_name, "args": tc.arguments},
+                        cost_so_far=ctx.cost.spent_usd,
+                        step=ctx.window.step,
+                    ),
+                )
                 record = await execute_tool(
                     registry_view=registry_view,
                     tool_name=tc.tool_name,
@@ -400,6 +562,36 @@ class Agent:
                     agent_id=self._config.agent_id,
                 )
                 ctx.record_tool_call(record)
+
+                # Fire tool hook
+                if record.failure_class is None:
+                    await _fire_hook(
+                        self._on_event,
+                        HookEvent(
+                            type="tool_result",
+                            data={
+                                "tool_name": tc.tool_name,
+                                "result_preview": str(record.result)[:120]
+                                if record.result is not None
+                                else "",
+                            },
+                            cost_so_far=ctx.cost.spent_usd,
+                            step=ctx.window.step,
+                        ),
+                    )
+                else:
+                    await _fire_hook(
+                        self._on_event,
+                        HookEvent(
+                            type="tool_error",
+                            data={
+                                "tool_name": tc.tool_name,
+                                "error": str(record.failure_class),
+                            },
+                            cost_so_far=ctx.cost.spent_usd,
+                            step=ctx.window.step,
+                        ),
+                    )
 
                 # Classify failure and decide recovery
                 if record.failure_class is not None:

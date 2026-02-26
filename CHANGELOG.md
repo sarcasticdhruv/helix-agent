@@ -7,6 +7,55 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-02-26
+
+### Added
+- **`StateGraph` / `CompiledGraph`** (`helix.core.graph`) — full LangGraph-compatible graph
+  execution engine. `StateGraph` supports `.add_node()`, `.add_edge()`,
+  `.add_conditional_edges()`, `.set_entry_point()`, `.set_finish_point()`, and `.compile()`.
+  `CompiledGraph` exposes `.run()`, `.run_sync()`, `.invoke()`, `.ainvoke()`, and `.stream()`
+  (async generator). Supports cycles, conditional branching, checkpoint persistence, and a
+  configurable `max_steps` guard. `END` and `START` sentinels exported from top-level `helix`.
+- **`execute_python` builtin tool** — sandboxed Python code execution in an isolated
+  subprocess. Blocks `subprocess`, `pty`, `ctypes`, `multiprocessing`, and `os.system`.
+  Returns `{"success", "stdout", "stderr", "returncode"}` with configurable timeout
+  (default 15 s). Included in `discover_tools()` output as the 13th builtin.
+- **`Agent.invoke()` / `Agent.ainvoke()`** — LangChain-compatible aliases for
+  `Agent.run_sync()` and `Agent.run()` respectively.
+- **`AgentPipeline`** (`helix.core.pipeline`) — sequential multi-agent pipe created with the
+  `|` operator (`agent_a | agent_b | agent_c`). Each agent's output feeds the next as input.
+  Exposes `.run()` (async) and `.run_sync()`.
+- **`@helix.agent` class decorator** (`helix.core.agent_decorator`) — decorate any class with
+  `@helix.agent(model=..., budget_usd=..., mode=...)` to automatically construct an `Agent`
+  from its method-level `@helix.tool` members.
+- **`helix.presets`** — 9 ready-made agent factory functions: `web_researcher()`, `writer()`,
+  `coder(language)`, `code_reviewer(language)`, `data_analyst()`, `api_agent()`,
+  `assistant()`, `summariser()`, and `fact_checker()`. `researcher` alias also exported.
+- **`HookEvent` / `HookFn`** (`helix.core.hooks`) — lightweight event hook system.
+  `Agent` accepts `on_event: HookFn | None` for per-call telemetry callbacks. Hook errors
+  are silenced so they never interrupt the agent loop.
+- **97 new pytest tests** (`tests/test_new_features.py`) — full coverage of
+  `StateGraph`, `AgentPipeline`, `HookEvent`, `@helix.agent` decorator, `quick()`,
+  `discover_tools`, presets, `execute_python`, `invoke`/`ainvoke`, `EvalSuite.case()`,
+  workflow `ChainNode`, and public API surface.
+
+### Fixed
+- **`EvalCase.name` UUID default** — `EvalCase.name` previously defaulted to a random UUID
+  fragment, making the `name or fn.__name__` fallback in `EvalSuite.case()` unreachable.
+  Default is now `""` so the decorator correctly uses the function name when no name is given.
+- **`contextlib.suppress` cleanup** — replaced all bare `try/except: pass` blocks in
+  `__init__.py`, `workflow.py`, and `core/graph.py` with `contextlib.suppress(Exception)`
+  (ruff SIM105).
+
+### Changed
+- **Ruff coverage extended to `tests/`** — CI lint and format steps now cover `src/ tests/`
+  (previously `src/` only).
+- **`Union[X, Y]` → `X | Y`** syntax modernisation in `workflow.py` (ruff UP007).
+- **`import helix.tools`** import-shadowing bug fixed in `__init__.py` — was silently
+  shadowing the `helix.tools` subpackage; corrected to import-with-alias pattern.
+
+---
+
 ## [0.3.3] — 2026-02-25
 
 ### Changed

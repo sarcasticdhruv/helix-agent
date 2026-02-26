@@ -2,11 +2,15 @@
 helix/models/providers/gemini.py
 
 Google Gemini provider.
-Compatible with google-generativeai 0.7.x and 0.8.x.
+Uses the new google-genai SDK (replaces the deprecated google-generativeai).
 
-Install:  pip install google-generativeai
+Install:  pip install google-genai
 Models:   gemini-2.5-flash (default), gemini-2.0-flash, gemini-2.5-pro
 Env var:  GOOGLE_API_KEY  or  GEMINI_API_KEY
+
+Migration note:
+  Old: google-generativeai  →  import google.generativeai as genai
+  New: google-genai          →  from google import genai; client = genai.Client(...)
 """
 
 from __future__ import annotations
@@ -27,11 +31,12 @@ class GeminiProvider(LLMProvider):
             api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
         )
 
-    def _get_genai(self):
+    def _get_client(self):
+        """Return an authenticated google.genai Client."""
         try:
-            import google.generativeai as genai
+            from google import genai
         except ImportError as err:
-            raise ImportError("pip install google-generativeai") from err
+            raise ImportError("pip install google-genai") from err
         if not self._api_key:
             raise HelixProviderError(
                 provider="google",
@@ -39,8 +44,7 @@ class GeminiProvider(LLMProvider):
                 reason="GOOGLE_API_KEY not set. Run: helix config set GOOGLE_API_KEY your-key",
                 retryable=False,
             )
-        genai.configure(api_key=self._api_key)
-        return genai
+        return genai.Client(api_key=self._api_key)
 
     async def complete(
         self,
@@ -52,52 +56,31 @@ class GeminiProvider(LLMProvider):
         **kwargs,
     ) -> ModelResponse:
         try:
-            genai = self._get_genai()
+            from google.genai import types
 
-            # Build a single prompt string from messages (most compatible path)
-            prompt = self._build_prompt(messages)
+            client = self._get_client()
 
-            gen_config = {
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-            }
-
-            # Get system instruction if present
             system_text = self._extract_system(messages)
+            contents = self._build_contents(messages)
 
-            # Create model — system_instruction supported in 0.7+
-            try:
-                client = genai.GenerativeModel(
-                    model_name=model,
-                    system_instruction=system_text if system_text else None,
-                    generation_config=gen_config,
-                )
-            except TypeError:
-                # Very old SDK — no system_instruction param
-                client = genai.GenerativeModel(
-                    model_name=model,
-                    generation_config=gen_config,
-                )
-                if system_text:
-                    prompt = f"[Instructions: {system_text}]\n\n{prompt}"
+            cfg = types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                system_instruction=system_text if system_text else None,
+            )
 
-            # Check if we have a multi-turn conversation
-            history = self._build_history(messages)
-            if history:
-                # Multi-turn: use chat session
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None, lambda: self._chat_complete(client, history, prompt)
-                )
-            else:
-                # Single turn: simplest path — just pass the string
-                loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(None, lambda: client.generate_content(prompt))
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=cfg,
+                ),
+            )
 
-            # Extract text
-            content = self._extract_text(response)
+            content = response.text or ""
 
-            # Usage metadata
             meta = getattr(response, "usage_metadata", None)
             usage = TokenUsage(
                 prompt_tokens=getattr(meta, "prompt_token_count", 0) or 0,
@@ -127,33 +110,80 @@ class GeminiProvider(LLMProvider):
                 retryable=retryable,
             ) from e
 
-    def _chat_complete(self, client, history: list[dict], last_msg: str):
-        """Use ChatSession for multi-turn conversations."""
-        chat = client.start_chat(history=history)
-        return chat.send_message(last_msg)
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        model: str = "gemini-2.5-flash",
+        **kwargs,
+    ) -> AsyncIterator[str]:
+        try:
+            from google.genai import types
 
-    def _extract_text(self, response) -> str:
-        """Safely extract text from any response format."""
-        # Try .text property first
+            client = self._get_client()
+            system_text = self._extract_system(messages)
+            contents = self._build_contents(messages)
+
+            cfg = types.GenerateContentConfig(
+                system_instruction=system_text if system_text else None,
+            )
+
+            loop = asyncio.get_event_loop()
+            response_iter = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content_stream(
+                    model=model,
+                    contents=contents,
+                    config=cfg,
+                ),
+            )
+            for chunk in response_iter:
+                text = getattr(chunk, "text", None) or ""
+                if text:
+                    yield text
+        except HelixProviderError:
+            raise
+        except Exception as e:
+            raise HelixProviderError(model=model, provider="google", original=e) from e
+
+    async def count_tokens(self, messages: list[dict], model: str) -> int:
         try:
-            t = response.text
-            if t:
-                return t
+            client = self._get_client()
+            contents = self._build_contents(messages)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: client.models.count_tokens(model=model, contents=contents),
+            )
+            return getattr(result, "total_tokens", None) or max(1, len(str(contents)) // 4)
         except Exception:
-            pass
-        # Try candidates
+            # Fall back to character estimate if API call fails
+            text = " ".join(str(m.get("content", "")) for m in messages)
+            return max(1, len(text) // 4)
+
+    def supported_models(self) -> list[str]:
+        return [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+        ]
+
+    async def health(self) -> bool:
         try:
-            for candidate in response.candidates:
-                parts = getattr(getattr(candidate, "content", None), "parts", [])
-                texts = [getattr(p, "text", "") for p in parts if getattr(p, "text", "")]
-                if texts:
-                    return "".join(texts)
+            client = self._get_client()
+            loop = asyncio.get_event_loop()
+            # list() forces the generator to run so we actually hit the API
+            await loop.run_in_executor(None, lambda: list(client.models.list()))
+            return True
         except Exception:
-            pass
-        return ""
+            return False
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _extract_system(self, messages: list[dict]) -> str:
-        """Extract system message text."""
+        """Collect all system-role messages into one string."""
         parts = []
         for msg in messages:
             if msg.get("role") == "system":
@@ -165,90 +195,26 @@ class GeminiProvider(LLMProvider):
                 parts.append(content)
         return "\n\n".join(parts)
 
-    def _build_prompt(self, messages: list[dict]) -> str:
-        """Build the final user turn as a plain string."""
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                content = msg.get("content", "") or ""
-                if isinstance(content, list):
-                    content = " ".join(
-                        c.get("text", "") if isinstance(c, dict) else str(c) for c in content
-                    )
-                return content
-        return "Hello"
-
-    def _build_history(self, messages: list[dict]) -> list[dict]:
+    def _build_contents(self, messages: list[dict]) -> list[dict]:
         """
-        Build chat history for multi-turn conversations.
-        Returns list of {"role": "user"|"model", "parts": [{"text": "..."}]}
-        Only includes prior turns — the final user message is handled separately.
+        Convert Helix message dicts to the google-genai `contents` format:
+        [{"role": "user"|"model", "parts": [{"text": "..."}]}, ...]
+        System messages are handled separately via GenerateContentConfig.
         """
-        turns = []
-        non_system = [m for m in messages if m.get("role") != "system"]
-
-        # If there's only one user message and no assistant turns, no history needed
-        if len(non_system) <= 1:
-            return []
-
-        for i, msg in enumerate(non_system):
+        contents = []
+        for msg in messages:
             role = msg.get("role", "user")
+            if role == "system":
+                continue  # injected via system_instruction
+            # Normalise role: assistant → model
+            genai_role = "model" if role == "assistant" else "user"
             content = msg.get("content", "") or ""
             if isinstance(content, list):
                 content = " ".join(
                     c.get("text", "") if isinstance(c, dict) else str(c) for c in content
                 )
-
-            is_last = i == len(non_system) - 1
-            if role == "user":
-                if is_last:
-                    break  # final user turn handled outside
-                turns.append({"role": "user", "parts": [{"text": content}]})
-            elif role == "assistant":
-                turns.append({"role": "model", "parts": [{"text": content}]})
-
-        return turns
-
-    async def stream(
-        self,
-        messages: list[dict[str, Any]],
-        model: str = "gemini-2.5-flash",
-        **kwargs,
-    ) -> AsyncIterator[str]:
-        try:
-            genai = self._get_genai()
-            prompt = self._build_prompt(messages)
-            client = genai.GenerativeModel(model_name=model)
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, lambda: client.generate_content(prompt, stream=True)
-            )
-            for chunk in response:
-                text = self._extract_text(chunk)
-                if text:
-                    yield text
-        except HelixProviderError:
-            raise
-        except Exception as e:
-            raise HelixProviderError(model=model, provider="google", original=e) from e
-
-    async def count_tokens(self, messages: list[dict], model: str) -> int:
-        text = self._build_prompt(messages)
-        return max(1, len(text) // 4)
-
-    def supported_models(self) -> list[str]:
-        return [
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-flash",  # may be unavailable in some regions
-            "gemini-1.5-pro",  # may be unavailable in some regions
-        ]
-
-    async def health(self) -> bool:
-        try:
-            genai = self._get_genai()
-            list(genai.list_models())
-            return True
-        except Exception:
-            return False
+            contents.append({"role": genai_role, "parts": [{"text": content}]})
+        # google-genai requires the last message to be from 'user'
+        if not contents:
+            contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
+        return contents
