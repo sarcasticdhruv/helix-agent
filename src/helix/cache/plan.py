@@ -200,12 +200,24 @@ class PlanCache:
 
             if best and best_score >= self._config.plan_match_threshold:
                 self._hits += 1
-                self._total_saved_usd += best.avg_cost_usd * 0.5  # Estimate 50% savings
+                # Savings are recorded from the *actual* cost of the run that
+                # uses this plan (see record_actual_savings), not guessed here.
                 return best.model_copy(update={"score": best_score})
 
             return None
         except Exception:
             return None
+
+    def record_actual_savings(self, template: PlanTemplate, actual_cost_usd: float) -> None:
+        """
+        Record the real savings from a plan-cache hit: the gap between the
+        template's historical average cost (from runs that built it without
+        this shortcut) and what this run actually spent. Called once the
+        run that used the cached plan has finished.
+        """
+        savings = template.avg_cost_usd - actual_cost_usd
+        if savings > 0:
+            self._total_saved_usd += savings
 
     async def store(self, task: str, ctx: Any) -> None:
         """

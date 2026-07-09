@@ -101,13 +101,17 @@ class ContextEngine:
 
         1. Apply multi-factor decay to each message
         2. Boost reference scores for messages cited in last_response
-        3. Optional: compute semantic similarity to current task
+        3. Compute semantic similarity to the latest response, if an embedder is given
         """
         messages = ctx.window.messages()
         current_step = ctx.window.step
 
         # Reference detection: find which messages are referenced in the last response
         referenced_ids = self._detect_references(messages, last_response)
+
+        semantic_scores: dict[str, float] = {}
+        if embedder is not None and last_response:
+            semantic_scores = await self._compute_semantic_scores(messages, last_response, embedder)
 
         for msg in messages:
             if msg.pinned:
@@ -118,13 +122,35 @@ class ContextEngine:
             if msg.id in referenced_ids:
                 msg.reference_score = 1.0
 
-            # Compute new relevance (semantic score = 0 unless embedder provided)
-            semantic_score = 0.0
             msg.relevance = _compute_relevance(
                 message=msg,
                 current_step=current_step,
-                semantic_score=semantic_score,
+                semantic_score=semantic_scores.get(msg.id, 0.0),
             )
+
+    async def _compute_semantic_scores(
+        self,
+        messages: list[ContextMessage],
+        last_response: str,
+        embedder: Any,
+    ) -> dict[str, float]:
+        """Cosine similarity between each non-pinned message and the latest response."""
+        from helix.cache.semantic import _cosine_similarity
+
+        candidates = [m for m in messages if not m.pinned]
+        if not candidates:
+            return {}
+        try:
+            vectors = await embedder.embed_batch([m.content for m in candidates] + [last_response])
+        except Exception:
+            return {}
+        if not vectors:
+            return {}
+        response_vec = vectors[-1]
+        return {
+            msg.id: _cosine_similarity(vec, response_vec)
+            for msg, vec in zip(candidates, vectors[:-1], strict=False)
+        }
 
     def _detect_references(
         self,

@@ -128,15 +128,24 @@ class ContextWindow:
     async def add_user(self, content: str) -> None:
         await self.add(ContextMessage(role=ContextMessageRole.USER, content=content))
 
-    async def add_assistant(self, content: str) -> None:
-        await self.add(ContextMessage(role=ContextMessageRole.ASSISTANT, content=content))
+    async def add_assistant(
+        self, content: str, tool_calls: list[dict[str, Any]] | None = None
+    ) -> None:
+        await self.add(
+            ContextMessage(
+                role=ContextMessageRole.ASSISTANT,
+                content=content,
+                tool_calls=tool_calls or None,
+            )
+        )
 
-    async def add_tool_result(self, tool_name: str, content: str) -> None:
+    async def add_tool_result(self, tool_name: str, content: str, tool_call_id: str) -> None:
         await self.add(
             ContextMessage(
                 role=ContextMessageRole.TOOL,
                 content=content,
                 tool_name=tool_name,
+                tool_call_id=tool_call_id,
             )
         )
 
@@ -166,9 +175,13 @@ class ContextWindow:
 
     def as_llm_messages(self) -> list[dict[str, Any]]:
         """
-        Convert to the list[dict] format expected by LLM providers.
-        Tool messages are mapped to the provider-agnostic format here;
-        provider adapters do final normalization.
+        Convert to the list[dict] format expected by LLM providers, using
+        OpenAI's native wire shape as the common representation:
+          - assistant messages that requested tools carry a "tool_calls" array
+          - tool-result messages carry "tool_call_id" (no extra keys — some
+            providers, e.g. Groq, reject unrecognized fields on tool messages)
+        Provider adapters (e.g. Anthropic, Gemini) convert this into their
+        own native shape; OpenAI-compatible providers pass it through as-is.
         """
         result = []
         for msg in self._messages:
@@ -177,7 +190,15 @@ class ContextWindow:
                     {
                         "role": "tool",
                         "content": msg.content,
-                        "tool_name": msg.tool_name or "",
+                        "tool_call_id": msg.tool_call_id or "",
+                    }
+                )
+            elif msg.role == ContextMessageRole.ASSISTANT and msg.tool_calls:
+                result.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content,
+                        "tool_calls": msg.tool_calls,
                     }
                 )
             else:
@@ -350,6 +371,11 @@ class ExecutionContext:
 
         # Model used per step (may change with degradation)
         self.model_per_step: list[str] = []
+
+        # Set when the model calls a transfer_to_* handoff tool; Agent._execute
+        # delegates to this target instead of finalizing its own result.
+        self.handoff_target: Any | None = None
+        self.handoff_reason: str = ""
 
     # ------------------------------------------------------------------
     # Convenience methods

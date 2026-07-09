@@ -605,7 +605,13 @@ class TestPresets:
 
         ag = coder()
         assert isinstance(ag, Agent)
-        assert ag._registry.has("execute_python")
+        # coder() explicitly grants read_file/write_file (allow_file_io=True by
+        # default) — it does NOT grant execute_python, and agents no longer
+        # silently inherit the global tool registry (see Agent.__init__'s
+        # inherit_global_tools, default False).
+        assert ag._registry.has("read_file")
+        assert ag._registry.has("write_file")
+        assert not ag._registry.has("execute_python")
 
     def test_coder_custom_language(self):
         from helix.presets import coder

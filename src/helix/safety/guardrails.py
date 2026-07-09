@@ -108,8 +108,13 @@ class LengthGuard(Guardrail):
 class KeywordBlockGuard(Guardrail):
     """Blocks responses containing any of the configured keywords."""
 
-    def __init__(self, blocked_keywords: list[str], case_sensitive: bool = False) -> None:
-        self._keywords = blocked_keywords
+    def __init__(
+        self, blocked_keywords: list[str] | None = None, case_sensitive: bool = False
+    ) -> None:
+        # Defaults to blocking nothing — build_guardrail_chain() constructs
+        # built-ins by name with no args; a required param here would crash
+        # the moment "keyword_block" was named without also being hand-built.
+        self._keywords = blocked_keywords or []
         self._case_sensitive = case_sensitive
 
     @property
@@ -135,8 +140,11 @@ class SchemaGuard(Guardrail):
     Passes through non-JSON responses without blocking.
     """
 
-    def __init__(self, schema: dict) -> None:
-        self._schema = schema
+    def __init__(self, schema: dict | None = None) -> None:
+        # Defaults to no schema — build_guardrail_chain() constructs
+        # built-ins by name with no args; a required param here would crash
+        # the moment "schema_guard" was named without also being hand-built.
+        self._schema = schema or {}
 
     @property
     def name(self) -> str:
@@ -158,6 +166,83 @@ class SchemaGuard(Guardrail):
                 guardrail_name=self.name,
                 reason=f"Invalid JSON: {e}",
             )
+
+
+class PromptInjectionGuard(Guardrail):
+    """
+    Heuristic prompt-injection / jailbreak detector.
+
+    Pattern-based, not a trained classifier — catches common, well-known
+    injection phrasings (instruction override, persona hijack, restriction
+    bypass, system-prompt exfiltration) without adding a model dependency.
+    This is a real but meaningfully lower bar than an ML classifier; treat
+    it as a first line of defense, not a complete one. Works on any text —
+    wire it into both incoming tasks and model output.
+    """
+
+    _PATTERNS: list[tuple[str, Pattern]] = [
+        (
+            "instruction_override",
+            re.compile(
+                r"\b(ignore|disregard|forget)\b(?:\s+\w+){0,3}\s+"
+                r"\b(previous|prior|above|earlier|all)\b(?:\s+\w+){0,3}\s+"
+                r"\b(instructions?|rules?|guidelines?|prompts?|directives?)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "persona_hijack",
+            re.compile(
+                r"\b(you are now|act as|pretend (to be|you are)|roleplay as)\b"
+                r"(?:\s+\w+){0,5}\s+"
+                r"\b(DAN|no restrictions|unfiltered|jailbroken|"
+                r"without\s+(?:any\s+)?(?:rules|limits|restrictions|filters))\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "restriction_bypass",
+            re.compile(
+                r"\b(bypass|disable|override|ignore|remove)\b(?:\s+\w+){0,2}\s+"
+                r"\b(safety|content polic(?:y|ies)|guardrails?|restrictions?|filters?)\b",
+                re.IGNORECASE,
+            ),
+        ),
+        (
+            "developer_mode",
+            re.compile(r"\bdeveloper mode\b|\bDAN mode\b|\bjailbreak(?:ed|ing)?\b", re.IGNORECASE),
+        ),
+        (
+            "system_prompt_exfiltration",
+            re.compile(
+                r"\b(repeat|reveal|print|show|output)\b(?:\s+\w+){0,2}\s+"
+                r"\b(your|the)\s+(system prompt|initial instructions|hidden instructions)\b",
+                re.IGNORECASE,
+            ),
+        ),
+    ]
+
+    def __init__(self, on_fail: str = "block") -> None:
+        """
+        Args:
+            on_fail: "block" rejects the content; "flag" lets it through
+                     but records the reason so callers can inspect it.
+        """
+        self._on_fail = on_fail
+
+    @property
+    def name(self) -> str:
+        return "prompt_injection"
+
+    async def check(self, content: str, context: ExecutionContext) -> GuardrailResult:
+        for label, pattern in self._PATTERNS:
+            match = pattern.search(content)
+            if match:
+                reason = f"Possible prompt injection detected ({label}): {match.group(0)!r}"
+                if self._on_fail == "block":
+                    return GuardrailResult(passed=False, guardrail_name=self.name, reason=reason)
+                return GuardrailResult(passed=True, guardrail_name=self.name, reason=reason)
+        return GuardrailResult(passed=True, guardrail_name=self.name)
 
 
 class GuardrailChain:
@@ -194,6 +279,7 @@ BUILTIN_GUARDRAILS = {
     "length_guard": LengthGuard,
     "keyword_block": KeywordBlockGuard,
     "schema_guard": SchemaGuard,
+    "prompt_injection": PromptInjectionGuard,
 }
 
 

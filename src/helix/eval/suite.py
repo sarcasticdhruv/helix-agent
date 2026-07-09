@@ -140,7 +140,7 @@ class EvalSuite:
         try:
             result = await agent.run(case.input)
             output = str(result.output)
-            tool_calls = []  # AgentResult doesn't carry full ToolCallRecords — use trace
+            tool_calls = getattr(result, "tool_call_records", [])
             cost_usd = result.cost_usd
             steps = result.steps
         except Exception as e:
@@ -191,6 +191,7 @@ class EvalSuite:
         output = str(getattr(agent_result, "output", ""))
         cost_usd = getattr(agent_result, "cost_usd", 0.0)
         steps = getattr(agent_result, "steps", 0)
+        tool_calls = getattr(agent_result, "tool_call_records", [])
 
         scores: dict[str, float] = {}
         total_weight = sum(s.weight for s in self._scorers)
@@ -200,7 +201,7 @@ class EvalSuite:
                 raw = await scorer.score(
                     case=case,
                     result_output=output,
-                    tool_calls=[],
+                    tool_calls=tool_calls,
                     cost_usd=cost_usd,
                     steps=steps,
                 )

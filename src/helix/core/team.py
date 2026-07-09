@@ -108,6 +108,17 @@ class Team:
         for agent in self._agents:
             result = await agent.run(current_input)
             results.append(result)
+            if result.error is not None:
+                # Don't feed a failed agent's error text to the next agent as
+                # if it were real input — stop and surface the failure.
+                return TeamResult(
+                    team_name=self._name,
+                    final_output=current_input,
+                    agent_results=results,
+                    total_cost_usd=sum(r.cost_usd for r in results),
+                    duration_s=time.time() - start,
+                    error=f"{agent.name} failed: {result.error}",
+                )
             current_input = str(result.output)
 
         total_cost = sum(r.cost_usd for r in results)
@@ -126,12 +137,18 @@ class Team:
 
         total_cost = sum(r.cost_usd for r in results)
         outputs = [str(r.output) for r in results]
+        failed = [
+            f"{a.name}: {r.error}"
+            for a, r in zip(self._agents, results, strict=False)
+            if r.error is not None
+        ]
         return TeamResult(
             team_name=self._name,
             final_output=outputs,
             agent_results=results,
             total_cost_usd=total_cost,
             duration_s=time.time() - start,
+            error="; ".join(failed) if failed else None,
         )
 
     async def _run_hierarchical(self, task: str, start: float) -> TeamResult:
@@ -151,6 +168,16 @@ class Team:
             f"Output a JSON array: [{{'specialist': name, 'subtask': description}}, ...]"
         )
         lead_result = await self._lead.run(decompose_prompt)
+
+        if lead_result.error is not None:
+            return TeamResult(
+                team_name=self._name,
+                final_output=None,
+                agent_results=[lead_result],
+                total_cost_usd=lead_result.cost_usd,
+                duration_s=time.time() - start,
+                error=f"lead agent failed: {lead_result.error}",
+            )
 
         # Parse subtasks
         import json
@@ -187,6 +214,7 @@ class Team:
 
         total_cost = sum(r.cost_usd for r in results)
         final_output = "\n\n".join(outputs) if outputs else str(lead_result.output)
+        failed = [f"{r.agent_name}: {r.error}" for r in results if r.error is not None]
 
         return TeamResult(
             team_name=self._name,
@@ -194,4 +222,5 @@ class Team:
             agent_results=results,
             total_cost_usd=total_cost,
             duration_s=time.time() - start,
+            error="; ".join(failed) if failed else None,
         )

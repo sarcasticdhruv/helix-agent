@@ -143,6 +143,7 @@ class OpenAIProvider(LLMProvider):
                     args = {"_raw": tc.function.arguments}
                 tool_calls.append(
                     ToolCallRecord(
+                        id=tc.id,
                         tool_name=tc.function.name,
                         arguments=args,
                     )

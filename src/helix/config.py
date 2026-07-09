@@ -173,6 +173,10 @@ class ContextMessage(BaseModel):
     pinned: bool = False  # Pinned messages are never evicted
     reference_score: float = 0.0  # Boosted when cited in subsequent LLM response
     tool_name: str | None = None  # For role=tool messages
+    tool_calls: list[dict[str, Any]] | None = (
+        None  # For role=assistant: the tool calls it requested
+    )
+    tool_call_id: str | None = None  # For role=tool: the id of the call this result answers
     token_count: int | None = None
 
     model_config = ConfigDict(frozen=False)
@@ -439,7 +443,9 @@ class EvalRunResult(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    backend: str = "inmemory"  # "inmemory" | "pinecone" | "qdrant" | "chroma"
+    # "inmemory" (default, ephemeral) | "sqlite" (persists across restarts).
+    # "pinecone" | "qdrant" | "chroma" are accepted but not yet implemented.
+    backend: str = "inmemory"
     short_term_limit: int = 20  # Max messages in rolling buffer
     auto_promote: bool = True  # Promote important memories to long-term
     importance_threshold: float = 0.7

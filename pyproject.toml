@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-framework"
-version = "0.3.4"
+version = "0.5.0"
 description = "Production-grade AI agent framework — cost governance, memory, caching, multi-agent teams, and built-in eval"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -61,6 +61,7 @@ http     = ["httpx>=0.25"]
 search   = ["ddgs>=9.0"]
 redis    = ["redis>=5.0"]
 schedule = ["croniter>=2.0"]
+mcp      = ["mcp>=1.0"]
 
 # ── Dev tools ─────────────────────────────────────────────────────────────────
 dev = [
@@ -85,6 +86,7 @@ all = [
     "ddgs>=9.0",
     "redis>=5.0",
     "croniter>=2.0",
+    "mcp>=1.0",
 ]
 
 [project.scripts]

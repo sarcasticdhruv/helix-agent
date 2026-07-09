@@ -16,11 +16,12 @@ Migration note:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator
 from typing import Any
 
-from helix.config import ModelResponse, TokenUsage
+from helix.config import ModelResponse, TokenUsage, ToolCallRecord
 from helix.errors import HelixProviderError
 from helix.interfaces import LLMProvider
 
@@ -63,11 +64,14 @@ class GeminiProvider(LLMProvider):
             system_text = self._extract_system(messages)
             contents = self._build_contents(messages)
 
-            cfg = types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                system_instruction=system_text if system_text else None,
-            )
+            cfg_kwargs: dict[str, Any] = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+                "system_instruction": system_text if system_text else None,
+            }
+            if tools:
+                cfg_kwargs["tools"] = [self._to_gemini_tool(tools, types)]
+            cfg = types.GenerateContentConfig(**cfg_kwargs)
 
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
@@ -80,6 +84,7 @@ class GeminiProvider(LLMProvider):
             )
 
             content = response.text or ""
+            tool_calls = self._extract_tool_calls(response)
 
             meta = getattr(response, "usage_metadata", None)
             usage = TokenUsage(
@@ -89,10 +94,11 @@ class GeminiProvider(LLMProvider):
 
             return ModelResponse(
                 content=content,
+                tool_calls=tool_calls,
                 usage=usage,
                 model=model,
                 provider="google",
-                finish_reason="stop",
+                finish_reason="tool_calls" if tool_calls else "stop",
             )
 
         except HelixProviderError:
@@ -200,12 +206,55 @@ class GeminiProvider(LLMProvider):
         Convert Helix message dicts to the google-genai `contents` format:
         [{"role": "user"|"model", "parts": [{"text": "..."}]}, ...]
         System messages are handled separately via GenerateContentConfig.
+
+        Assistant turns that requested tool calls become a "model" content
+        with `function_call` parts; tool-result messages become a "user"
+        content with a `function_response` part. The generic message dict
+        has no tool name on the "tool" role (some providers reject the
+        extra field), so the name is recovered here from the matching
+        assistant tool_calls entry seen earlier in the same conversation.
         """
         contents = []
+        call_id_to_name: dict[str, str] = {}
         for msg in messages:
             role = msg.get("role", "user")
             if role == "system":
                 continue  # injected via system_instruction
+
+            if role == "assistant" and msg.get("tool_calls"):
+                parts: list[dict[str, Any]] = []
+                content = msg.get("content", "") or ""
+                if content:
+                    parts.append({"text": content})
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    try:
+                        args = json.loads(fn.get("arguments") or "{}")
+                    except Exception:
+                        args = {}
+                    name = fn.get("name", "")
+                    call_id_to_name[tc.get("id", "")] = name
+                    parts.append({"function_call": {"name": name, "args": args}})
+                contents.append({"role": "model", "parts": parts})
+                continue
+
+            if role == "tool":
+                name = call_id_to_name.get(msg.get("tool_call_id", ""), "")
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "function_response": {
+                                    "name": name,
+                                    "response": {"result": msg.get("content", "")},
+                                }
+                            }
+                        ],
+                    }
+                )
+                continue
+
             # Normalise role: assistant → model
             genai_role = "model" if role == "assistant" else "user"
             content = msg.get("content", "") or ""
@@ -218,3 +267,31 @@ class GeminiProvider(LLMProvider):
         if not contents:
             contents = [{"role": "user", "parts": [{"text": "Hello"}]}]
         return contents
+
+    def _to_gemini_tool(self, tools: list[dict], types: Any) -> Any:
+        """Convert Helix tool schemas ({name, description, parameters}) to a genai Tool."""
+        declarations = [
+            types.FunctionDeclaration(
+                name=t["name"],
+                description=t.get("description", ""),
+                parameters=t.get("parameters") or {"type": "object", "properties": {}},
+            )
+            for t in tools
+        ]
+        return types.Tool(function_declarations=declarations)
+
+    def _extract_tool_calls(self, response: Any) -> list[ToolCallRecord]:
+        """Pull function_call parts out of a genai response into ToolCallRecords."""
+        tool_calls: list[ToolCallRecord] = []
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return tool_calls
+        content = getattr(candidates[0], "content", None)
+        parts = getattr(content, "parts", None) or []
+        for part in parts:
+            fc = getattr(part, "function_call", None)
+            if fc is None:
+                continue
+            args = dict(fc.args) if getattr(fc, "args", None) else {}
+            tool_calls.append(ToolCallRecord(tool_name=fc.name, arguments=args))
+        return tool_calls

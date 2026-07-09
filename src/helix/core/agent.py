@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from helix.config import (
     AgentConfig,
@@ -34,6 +35,8 @@ from helix.config import (
     ObservabilityConfig,
     PermissionConfig,
     StructuredOutputConfig,
+    TokenUsage,
+    ToolCallRecord,
 )
 from helix.context import ExecutionContext
 from helix.core.hooks import HookEvent, HookFn
@@ -68,8 +71,19 @@ class AgentResult(BaseModel):
     model_used: str | None = None  # Which model was actually called
     error: str | None = None
     trace: dict[str, Any] | None = None  # Populated if observability enabled
+    tool_call_records: list[ToolCallRecord] = Field(
+        default_factory=list
+    )  # Full records; `tool_calls` above stays an int for backward compat
+    handoff_chain: list[str] = Field(
+        default_factory=list
+    )  # Agent names this run passed through, in order
 
     model_config = ConfigDict(frozen=True)
+
+    @property
+    def success(self) -> bool:
+        """True if the run completed without error. Prefer this over string-matching `.output`."""
+        return self.error is None
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +129,8 @@ class Agent:
         observability: ObservabilityConfig | None = None,
         system_prompt: str | None = None,
         on_event: HookFn | None = None,
+        inherit_global_tools: bool = False,
+        handoffs: list[Agent] | None = None,
         **extra_config: Any,
     ) -> None:
         self._config = AgentConfig(
@@ -131,17 +147,35 @@ class Agent:
             structured_output=structured_output or StructuredOutputConfig(),
             observability=observability or ObservabilityConfig(),
             system_prompt_override=system_prompt,
+            # Forwards fields like guardrails=[...], hitl=HITLConfig(...),
+            # tenant_id=..., loop_limit=... — previously accepted here and
+            # silently discarded without ever reaching AgentConfig.
+            **extra_config,
         )
 
-        # Tool registry: start with global, add agent-specific tools
+        # Tool registry: per-agent by default (secure by default — a bare
+        # `import helix` registers 13 builtins, including execute_python and
+        # write_file, into the global registry; agents must opt in to inherit
+        # them explicitly rather than getting them for free).
         self._registry = ToolRegistry()
-        # Inherit global registered tools
-        for t in _global_registry.all():
-            self._registry.register(t)
+        if inherit_global_tools:
+            for t in _global_registry.all():
+                self._registry.register(t)
         # Register agent-specific tools
         if tools:
             for t in tools:
                 self._registry.register(t)
+
+        # Handoffs — each target gets a transfer_to_<name> tool the model
+        # can call; Agent._reasoning_loop recognizes it and Agent._execute
+        # delegates to the target instead of finalizing this agent's result.
+        self._handoffs: dict[str, Agent] = {}
+        if handoffs:
+            from helix.core.handoff import handoff_tool_name, make_handoff_tool
+
+            for target in handoffs:
+                self._registry.register(make_handoff_tool(target))
+                self._handoffs[handoff_tool_name(target)] = target
 
         # Subsystems — lazily initialized on first run
         self._memory_store: Any | None = None
@@ -153,6 +187,7 @@ class Agent:
         self._hitl_controller: Any | None = None
         self._context_engine: Any | None = None
         self._audit_log: Any | None = None
+        self._embedder: Any | None = None
 
         self._initialized: bool = False
         self._on_event: HookFn | None = on_event
@@ -187,6 +222,19 @@ class Agent:
             session_id=session_id,
             parent_run_id=parent_run_id,
         )
+
+        # A fresh Tracer per run — Agent instances are reused across many
+        # run() calls (Session, Team, GroupChat, evals), so a tracer built
+        # once at lazy-init time would leak spans across runs and never
+        # carry the right run_id.
+        if self._config.observability.trace_enabled:
+            from helix.observability.tracer import Tracer
+
+            self._tracer = Tracer(
+                run_id=ctx.run_id,
+                agent_id=self._config.agent_id,
+                agent_name=self._config.name,
+            )
 
         try:
             result = await self._execute(ctx, task, output_schema=output_schema)
@@ -319,6 +367,7 @@ class Agent:
         new_agent = Agent.__new__(Agent)
         new_agent._config = AgentConfig(**config_data)
         new_agent._registry = self._registry  # Shared tool registry
+        new_agent._handoffs = self._handoffs
         new_agent._initialized = False
         # Subsystems will re-init on first run
         for attr in (
@@ -331,6 +380,7 @@ class Agent:
             "_hitl_controller",
             "_context_engine",
             "_audit_log",
+            "_embedder",
         ):
             setattr(new_agent, attr, None)
         return new_agent
@@ -357,6 +407,12 @@ class Agent:
         task: str,
         output_schema: Any | None = None,
     ) -> AgentResult:
+        # 0. Guardrails previously only ever checked the model's output —
+        # nothing screened the incoming task itself (e.g. for prompt
+        # injection) before it entered context, memory, and every
+        # downstream LLM call.
+        task = await self._run_guardrails(ctx, task)
+
         # 1. Build initial context (system prompt + episodic memory + task)
         await self._build_context(ctx, task)
 
@@ -395,9 +451,39 @@ class Agent:
         # 4. Reasoning loop
         output = await self._reasoning_loop(ctx, task, plan=plan)
 
+        # A handoff tool was called — this agent is deferring to another
+        # agent rather than finalizing its own answer. Delegate and return
+        # the target's result (with this agent's cost folded in) instead of
+        # building a result from this agent's own (incomplete) output.
+        if ctx.handoff_target is not None:
+            target = ctx.handoff_target
+            handoff_task = self._build_handoff_task(task, output, ctx.handoff_reason)
+            await _fire_hook(
+                self._on_event,
+                HookEvent(
+                    type="handoff",
+                    data={"target": target.name, "reason": ctx.handoff_reason},
+                    cost_so_far=ctx.cost.spent_usd,
+                ),
+            )
+            target_result = await target.run(
+                handoff_task, session_id=ctx.session_id, parent_run_id=ctx.run_id
+            )
+            return target_result.model_copy(
+                update={
+                    "cost_usd": round(target_result.cost_usd + ctx.cost.spent_usd, 6),
+                    "handoff_chain": [self._config.name, *target_result.handoff_chain],
+                }
+            )
+
         # 5. Apply structured output if configured
         if output_schema or self._config.structured_output.enabled:
             output = await self._apply_structured_output(ctx, output, output_schema)
+
+        # Record the real savings this plan-cache hit produced, if any.
+        if plan is not None and self._cache_controller:
+            with contextlib.suppress(Exception):
+                self._cache_controller.plan.record_actual_savings(plan, ctx.cost.spent_usd)
 
         # 6. Store successful plan to plan cache
         await self._store_plan(ctx, task)
@@ -440,13 +526,26 @@ class Agent:
         tool_schemas = registry_view.schemas()
         final_output = ""
 
+        if plan is not None:
+            # Give the model a real shortcut: the plan cache's whole point is
+            # to skip re-deriving a known-good approach. Without this, a
+            # cache "hit" changed nothing about how the agent behaved.
+            await ctx.window.add_system(
+                "A similar task was solved successfully before. Reuse this "
+                f"approach where it applies, adapting details to the current task:\n"
+                f"{plan.steps_description}",
+                pinned=False,
+            )
+
         while True:
             ctx.window.tick()
             ctx.check_loop()
 
             # Compact context if approaching limit
             if ctx.window.needs_compaction():
-                await self._context_engine.compact(ctx)
+                await self._context_engine.compact(
+                    ctx, embedder=self._embedder, llm_router=self._llm_router
+                )
 
             messages = ctx.window.as_llm_messages()
             model = ctx.effective_model()
@@ -478,17 +577,27 @@ class Agent:
             )
 
             # LLM call
-            response = await self._llm_router.complete(
-                messages=messages,
-                model=model,
-                tools=tool_schemas if tool_schemas else None,
-                temperature=self._config.model.temperature,
-                max_tokens=self._config.model.max_tokens,
+            span_cm = (
+                self._tracer.span("llm.call", model=model, step=ctx.window.step)
+                if self._tracer
+                else contextlib.nullcontext()
             )
+            with span_cm as llm_span:
+                response = await self._llm_router.complete(
+                    messages=messages,
+                    model=model,
+                    tools=tool_schemas if tool_schemas else None,
+                    temperature=self._config.model.temperature,
+                    max_tokens=self._config.model.max_tokens,
+                )
             ctx.model_per_step.append(model)
 
             # Record actual cost
-            await ctx.cost.record(self._calculate_actual_cost(response.usage, model))
+            call_cost = self._calculate_actual_cost(response.usage, model)
+            await ctx.cost.record(call_cost)
+            if self._tracer and llm_span is not None:
+                llm_span.meta["tokens"] = response.usage.model_dump()
+                llm_span.meta["cost_usd"] = call_cost
 
             await _fire_hook(
                 self._on_event,
@@ -518,10 +627,34 @@ class Agent:
             # Guardrails on response
             cleaned = await self._run_guardrails(ctx, response.content)
 
-            # Store assistant response in context
-            await ctx.window.add_assistant(cleaned)
+            # Store assistant response in context, including the tool calls it
+            # requested — providers need this turn replayed verbatim on the
+            # next call, or the follow-up request is malformed.
+            wire_tool_calls = (
+                [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.tool_name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in response.tool_calls
+                ]
+                if response.tool_calls
+                else None
+            )
+            await ctx.window.add_assistant(cleaned, tool_calls=wire_tool_calls)
             ctx.record_step_output(ctx.window.step, cleaned)
             final_output = cleaned
+
+            if self._tracer:
+                self._tracer.log_step(step=ctx.window.step, response_content=cleaned, model=model)
+
+            # Multi-factor relevance decay — feeds compaction's compressible-
+            # message gate above. Runs every step, per the context engine's design.
+            await self._context_engine.update_relevance(ctx, cleaned, embedder=self._embedder)
 
             # Cache the response for future semantic lookups
             await self._store_semantic_cache(ctx, task, cleaned, ctx.cost.spent_usd)
@@ -544,6 +677,7 @@ class Agent:
                 break
 
             # Execute tool calls
+            handoff_triggered = False
             for tc in response.tool_calls:
                 await _fire_hook(
                     self._on_event,
@@ -554,13 +688,19 @@ class Agent:
                         step=ctx.window.step,
                     ),
                 )
-                record = await execute_tool(
-                    registry_view=registry_view,
-                    tool_name=tc.tool_name,
-                    arguments=tc.arguments,
-                    step=ctx.window.step,
-                    agent_id=self._config.agent_id,
+                tool_span_cm = (
+                    self._tracer.span("tool.call", tool_name=tc.tool_name, step=ctx.window.step)
+                    if self._tracer
+                    else contextlib.nullcontext()
                 )
+                with tool_span_cm:
+                    record = await execute_tool(
+                        registry_view=registry_view,
+                        tool_name=tc.tool_name,
+                        arguments=tc.arguments,
+                        step=ctx.window.step,
+                        agent_id=self._config.agent_id,
+                    )
                 ctx.record_tool_call(record)
 
                 # Fire tool hook
@@ -604,10 +744,20 @@ class Agent:
                     if record.result is not None
                     else f"[Tool {tc.tool_name} failed: {record.failure_class}]"
                 )
-                await ctx.window.add_tool_result(tc.tool_name, result_content)
+                await ctx.window.add_tool_result(tc.tool_name, result_content, tool_call_id=tc.id)
 
                 # Memory: auto-store important tool results
                 await self._maybe_store_memory(ctx, tc.tool_name, result_content)
+
+                if tc.tool_name in self._handoffs and record.failure_class is None:
+                    ctx.handoff_target = self._handoffs[tc.tool_name]
+                    ctx.handoff_reason = (
+                        record.result.get("reason", "") if isinstance(record.result, dict) else ""
+                    )
+                    handoff_triggered = True
+
+            if handoff_triggered:
+                break
 
         return final_output
 
@@ -731,6 +881,16 @@ class Agent:
         with contextlib.suppress(Exception):
             await self._cache_controller.plan.store(task, ctx)
 
+    def _build_handoff_task(self, original_task: str, last_output: str, reason: str) -> str:
+        """Compose the task string the target agent receives on a handoff."""
+        parts = [f"[Handed off from {self._config.name}]"]
+        if reason:
+            parts.append(f"Reason: {reason}")
+        parts.append(f"Original task: {original_task}")
+        if last_output:
+            parts.append(f"Context from {self._config.name}: {last_output}")
+        return "\n\n".join(parts)
+
     # ------------------------------------------------------------------
     # Safety helpers
     # ------------------------------------------------------------------
@@ -835,10 +995,23 @@ class Agent:
     # ------------------------------------------------------------------
 
     def _estimate_call_cost(self, messages: list[dict], model: str) -> float:
-        """Rough pre-call cost estimate for budget gate."""
-        token_count = sum(len(m.get("content", "")) // 4 for m in messages)
-        cost_per_1k = 0.005  # Conservative default
-        return (token_count / 1000) * cost_per_1k
+        """
+        Pre-call cost estimate for the budget gate, using the same
+        per-model pricing table as the post-call actual-cost calculation
+        (not a flat blended rate). Completion tokens are estimated at
+        the configured max_tokens — the worst case for this call — since
+        this is a hard budget *gate*: it should never wave through a call
+        that could exceed budget, even if most calls finish well short of
+        their max_tokens ceiling.
+        """
+        prompt_tokens = sum(len(str(m.get("content", "") or "")) // 4 for m in messages)
+        estimated_usage = TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=self._config.model.max_tokens,
+        )
+        if self._llm_router:
+            return self._llm_router.calculate_cost(estimated_usage, model)
+        return (prompt_tokens / 1000) * 0.005
 
     def _calculate_actual_cost(self, usage: Any, model: str) -> float:
         """Calculate actual cost from token usage."""
@@ -885,6 +1058,18 @@ class Agent:
 
         target_schema = schema or self._config.structured_output.pydantic_model
         max_retries = self._config.structured_output.max_retries
+        is_pydantic_model = isinstance(target_schema, type) and issubclass(target_schema, BaseModel)
+        # A Pydantic *class* stringifies to "<class '...'>" — useless as a
+        # correction hint. Use its real JSON schema instead when available.
+        schema_for_prompt = (
+            target_schema.model_json_schema() if is_pydantic_model else target_schema
+        )
+        # Native structured-output mode: OpenAI/Azure/openai-compatible
+        # providers use response_format to constrain decoding to valid JSON;
+        # other providers accept and ignore it (no behavior change for them).
+        response_format = (
+            {"type": "json_object"} if self._config.structured_output.use_native else None
+        )
 
         for attempt in range(max_retries + 1):
             try:
@@ -895,7 +1080,7 @@ class Agent:
 
                 parsed = _json.loads(cleaned)
 
-                if isinstance(target_schema, type) and issubclass(target_schema, BaseModel):
+                if is_pydantic_model:
                     return target_schema(**parsed)
                 return parsed
             except Exception as e:
@@ -903,12 +1088,14 @@ class Agent:
                     # Ask LLM to fix the output
                     correction_prompt = (
                         f"Your previous output could not be parsed as JSON: {e}. "
-                        f"Output ONLY valid JSON matching this schema: {target_schema}."
+                        f"Output ONLY valid JSON matching this schema: {schema_for_prompt}."
                     )
                     await ctx.window.add_user(correction_prompt)
                     messages = ctx.window.as_llm_messages()
                     model = ctx.effective_model()
-                    response = await self._llm_router.complete(messages=messages, model=model)
+                    response = await self._llm_router.complete(
+                        messages=messages, model=model, response_format=response_format
+                    )
                     raw_output = response.content
                 else:
                     # Return raw string on final failure
@@ -984,6 +1171,14 @@ class Agent:
         self._memory_store = MemoryStore(config=cfg.memory)
         await self._memory_store.initialize()
 
+        # Guardrails — cfg.guardrails is a list of built-in names (e.g.
+        # "pii_redactor", "length_guard"); _run_guardrails() no-ops if this
+        # stays None, so without this, AgentConfig.guardrails was unreachable.
+        if cfg.guardrails:
+            from helix.safety.guardrails import build_guardrail_chain
+
+            self._guardrail_chain = build_guardrail_chain(cfg.guardrails)
+
         # Cache
         if cfg.cache.enabled:
             from helix.cache.controller import CacheController
@@ -996,6 +1191,13 @@ class Agent:
 
         self._context_engine = ContextEngine(config=cfg)
 
+        # Embedder — powers relevance decay's semantic term and compaction
+        # clustering. Same convention as cache/memory: always construct it;
+        # it degrades to zero vectors on its own if no embedding key is set.
+        from helix.models.embedder import OpenAIEmbedder
+
+        self._embedder = OpenAIEmbedder()
+
         # Audit log
         if cfg.observability.audit_enabled:
             from helix.safety.audit import LocalFileAuditLog
@@ -1005,15 +1207,7 @@ class Agent:
                 log_dir=".helix/audit",
             )
 
-        # Tracer
-        if cfg.observability.trace_enabled:
-            from helix.observability.tracer import Tracer
-
-            self._tracer = Tracer(
-                run_id="",  # Updated per-run
-                agent_id=cfg.agent_id,
-                agent_name=cfg.name,
-            )
+        # Tracer is (re)created per run() call, not here — see Agent.run().
 
     # ------------------------------------------------------------------
     # Result builders
@@ -1044,6 +1238,7 @@ class Agent:
             agent_name=self._config.name,
             duration_s=round(time.time() - ctx.started_at, 3),
             tool_calls=len(ctx.tool_calls),
+            tool_call_records=list(ctx.tool_calls),
             cache_hits=ctx.cache_hits,
             cache_savings_usd=round(ctx.cache_savings_usd, 6),
             episodes_used=episodes_used,
@@ -1064,6 +1259,7 @@ class Agent:
             agent_name=self._config.name,
             duration_s=round(time.time() - ctx.started_at, 3),
             tool_calls=len(ctx.tool_calls),
+            tool_call_records=list(ctx.tool_calls),
             cache_hits=ctx.cache_hits,
             cache_savings_usd=0.0,
             error=error_msg,

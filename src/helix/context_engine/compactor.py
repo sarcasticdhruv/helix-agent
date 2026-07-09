@@ -114,11 +114,20 @@ class IntelligentCompactor:
             try:
                 texts = [m.content[:500] for m in compressible]
                 embeddings = await embedder.embed_batch(texts)
-                clusters = _cluster_by_similarity(compressible, embeddings)
-                for cluster_indices in clusters:
-                    group = [compressible[i] for i in cluster_indices]
-                    summary = await self._summarize_group(group, llm_router)
-                    summaries.append(summary)
+                if not any(any(v != 0.0 for v in vec) for vec in embeddings):
+                    # Embedder produced all-zero vectors (no embedding key
+                    # configured, or the call failed) — clustering would
+                    # degenerate into one message per cluster (every pairwise
+                    # similarity is 0), which is a silent no-op. Treat the
+                    # whole compressible set as one group instead, so it
+                    # still gets a real LLM summary when a router is available.
+                    summaries = [await self._summarize_group(compressible, llm_router)]
+                else:
+                    clusters = _cluster_by_similarity(compressible, embeddings)
+                    for cluster_indices in clusters:
+                        group = [compressible[i] for i in cluster_indices]
+                        summary = await self._summarize_group(group, llm_router)
+                        summaries.append(summary)
             except Exception:
                 # Fallback: simple truncation without embedding
                 summaries = self._truncate_fallback(compressible)

@@ -7,7 +7,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sarcasticdhruv/helix-agent/actions)
 
-Helix gives you agents that actually behave in production: hard budget limits, semantic caching that cuts API costs by 40-70%, persistent memory, multi-agent teams, YAML-based task pipelines, a LangGraph-compatible `StateGraph`, and a 5-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
+Helix gives you agents that actually behave in production: hard budget limits, semantic caching for repeated queries, opt-in persistent memory (SQLite, zero extra dependency), MCP tool support, agent handoffs, multi-agent teams, YAML-based task pipelines, a LangGraph-compatible `StateGraph`, and a 6-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
 
 The `import helix` API is intentionally close to what you already know from AutoGen, CrewAI, and LangGraph, but with the production layer those frameworks leave to you: cost governance, caching, memory, observability, and safety controls.
 
@@ -20,14 +20,17 @@ The `import helix` API is intentionally close to what you already know from Auto
 - [Preset Agents](#preset-agents)
 - [Agent Pipelines](#agent-pipelines)
 - [Tools](#tools)
+- [MCP Tools](#mcp-tools)
 - [Tasks and Pipelines](#tasks-and-pipelines)
 - [YAML Configuration](#yaml-configuration)
 - [Multi-Agent Teams](#multi-agent-teams)
+- [Handoffs](#handoffs)
 - [Group Chat](#group-chat)
 - [Workflows](#workflows)
 - [StateGraph](#stategraph)
 - [Sessions](#sessions)
 - [Budget Enforcement](#budget-enforcement)
+- [Guardrails](#guardrails)
 - [Event Hooks](#event-hooks)
 - [Evaluation](#evaluation)
 - [Framework Adapters](#framework-adapters)
@@ -167,7 +170,7 @@ agent = helix.Agent(
     # Memory
     memory=helix.MemoryConfig(short_term_limit=20),
 
-    # Semantic caching (40-70% cost reduction on repeated queries)
+    # Semantic caching (cost reduction on repeated/similar queries)
     cache=helix.CacheConfig(enabled=True, semantic_threshold=0.92),
 )
 
@@ -339,6 +342,42 @@ agent = helix.Agent(
 ```
 
 Use `helix.discover_tools()` to list every tool registered in the global registry (built-ins + any `@helix.tool` functions loaded at import time).
+
+> **Breaking change (v0.5):** agents no longer automatically get every
+> globally-registered tool. Pass the tools you want explicitly via
+> `tools=[...]`, or opt in to the old behavior with
+> `Agent(..., inherit_global_tools=True)`.
+
+---
+
+## MCP Tools
+
+Connect to any [Model Context Protocol](https://modelcontextprotocol.io) server and use its tools like any other Helix tool. Requires `pip install "helix-framework[mcp]"`.
+
+```python
+import helix
+from helix.tools.mcp import MCPToolSource
+
+async def main():
+    async with MCPToolSource(command="npx", args=["-y", "@some/mcp-server"]) as tools:
+        agent = helix.Agent(
+            name="Bot",
+            role="Assistant",
+            goal="Use the connected MCP tools to help the user.",
+            tools=tools,
+        )
+        result = await agent.run("...")
+        print(result.output)
+```
+
+Without the context manager (when the connection needs to outlive one call):
+
+```python
+source = MCPToolSource(command="python", args=["-m", "my_mcp_server"])
+tools = await source.connect()
+# ... use tools across multiple agent runs ...
+await source.close()
+```
 
 ---
 
@@ -536,6 +575,35 @@ team = helix.Team(
     lead=lead,
 )
 ```
+
+---
+
+## Handoffs
+
+Give an agent a list of `handoffs` and it can transfer the conversation to a specialist mid-run — visible to the model as a normal tool call (`transfer_to_<name>`), not a hidden orchestration decision.
+
+```python
+import helix
+
+billing = helix.Agent(
+    name="BillingAgent",
+    role="Billing specialist",
+    goal="Handle billing questions, invoices, refunds, and payment issues.",
+)
+triage = helix.Agent(
+    name="Triage",
+    role="Customer support triage agent",
+    goal="Figure out what the customer needs. Transfer billing questions to the billing agent.",
+    handoffs=[billing],
+)
+
+result = await triage.run("My invoice #4471 shows double charges, can you help?")
+print(result.output)          # produced by BillingAgent, not Triage
+print(result.handoff_chain)   # ["Triage"] — the path this run took before reaching its answer
+print(result.cost_usd)        # includes cost from every agent in the chain
+```
+
+`handoffs` can be combined with `guardrails` and any other `Agent` option. Chained handoffs (A → B → C) accumulate in `handoff_chain` in order.
 
 ---
 
@@ -791,6 +859,48 @@ With `BudgetStrategy.DEGRADE`, Helix steps down through the fallback chain as th
 
 ---
 
+## Guardrails
+
+Guardrails run on both the incoming task and the model's output — pass built-in guardrail names to `Agent(...)` directly:
+
+```python
+import helix
+
+agent = helix.Agent(
+    name="Bot",
+    role="Assistant",
+    goal="Help users.",
+    guardrails=["prompt_injection", "pii_redactor", "length_guard"],
+)
+```
+
+| Name | Behavior |
+|---|---|
+| `prompt_injection` | Blocks common jailbreak/injection phrasings (instruction override, persona hijack, restriction bypass, "developer mode", system-prompt exfiltration). Heuristic pattern matching, not a trained classifier. |
+| `pii_redactor` | Redacts email, phone, SSN, credit card, and IP address patterns. Never blocks — cleans and passes through. |
+| `length_guard` | Blocks responses shorter than `min_chars` or longer than `max_chars` (defaults: 1 / 100,000). |
+| `keyword_block` | Blocks content containing configured keywords (default: none — must be built directly for a custom list). |
+| `schema_guard` | Validates that JSON-shaped output actually parses as JSON. |
+
+A guardrail violation raises `helix.errors.GuardrailViolationError`.
+
+`guardrails=[...]` on `Agent(...)` only supports built-in names with default
+parameters (`build_guardrail_chain` under the hood). For a custom-configured
+guardrail — a specific keyword list, `flag` instead of `block` mode — build
+and call a `GuardrailChain` directly wherever you need it:
+
+```python
+from helix.safety.guardrails import GuardrailChain, KeywordBlockGuard, PromptInjectionGuard
+
+chain = GuardrailChain([
+    PromptInjectionGuard(on_fail="flag"),  # let it through but record the reason
+    KeywordBlockGuard(blocked_keywords=["competitor_name"]),
+])
+result = await chain.check(some_text, context=None)
+```
+
+---
+
 ## Evaluation
 
 ```python
@@ -825,7 +935,7 @@ async def main():
 asyncio.run(main())
 ```
 
-The eval suite runs 5 scorers per case: factual accuracy, tool usage, trajectory adherence, cost efficiency, and output format.
+The eval suite runs 6 scorers per case: factual accuracy, tool selection, trajectory adherence, cost efficiency, step efficiency, and output quality.
 
 **`@suite.case` decorator:**
 
@@ -929,14 +1039,17 @@ helix config set KEY value            # set a provider API key
 ```
 helix/
 ├── core/            Agent, ConversableAgent, GroupChat, Task, Pipeline,
-│                    Workflow, Team, Session, Tool, StateGraph, AgentPipeline
+│                    Workflow, Team, Session, Tool, StateGraph, AgentPipeline,
+│                    Handoff (transfer_to_* tools between agents)
 ├── presets/         9 ready-made agent factories (web_researcher, coder, writer, …)
-├── memory/          Short-term buffer, WAL-backed long-term store, episodic recall
+├── tools/           13 builtins + MCP client (connect to any MCP server's tools)
+├── memory/          Short-term buffer, WAL-backed long-term store, episodic recall,
+│                    backends: inmemory (default) | sqlite (persists) | qdrant/pinecone/chroma (not yet implemented)
 ├── cache/           Semantic cache (tier 1), plan cache (tier 2), prefix cache (tier 3)
 ├── models/          Router, complexity estimator, 12 provider backends
-├── safety/          Cost governor, permission model, guardrails, HITL, audit log
+├── safety/          Cost governor, permission model, guardrails (incl. prompt_injection), HITL, audit log
 ├── context_engine/  Multi-factor token decay, context compactor, preflight estimator
-├── eval/            EvalSuite, 5 scorers, @suite.case decorator, trajectory eval,
+├── eval/            EvalSuite, 6 scorers, @suite.case decorator, trajectory eval,
 │                    regression gate, monitor
 ├── observability/   Tracer, ghost debug resolver, failure replay
 ├── adapters/        LangChain, CrewAI, AutoGen + universal LLM wrapper

@@ -7,6 +7,148 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-07-10
+
+A correctness-and-honesty pass, driven by an independent code audit plus live
+end-to-end testing against a real provider. The headline: the tool-calling
+loop — the single most important path in the framework — was broken against
+every real provider, and several advertised "AI-native" subsystems were wired
+up in name but never actually invoked. Every item below was verified either
+by a targeted unit test or live against the Groq API (noted per-item).
+
+### Fixed — the tool-calling loop (previously broken end to end)
+- **Every agent silently inherited the entire global tool registry**, even
+  when constructed with `tools=[]` or no tools at all — including
+  `execute_python`, `write_file`, and `get_env`, registered globally by a bare
+  `import helix`. Tool inheritance is now opt-in via `Agent(..., inherit_global_tools=True)`;
+  the default is no inherited tools. **This is a breaking change**: agents
+  that relied on implicit global tool access must now pass `tools=[...]`
+  explicitly or set `inherit_global_tools=True`.
+- **The assistant's tool-call turn was never persisted** back into
+  conversation history — only its text was — so the follow-up request to the
+  provider was missing the very message the tool result was supposed to
+  respond to.
+- **Tool-result messages were missing `tool_call_id`** (and carried an
+  unrecognized `tool_name` field some providers reject outright), so
+  OpenAI/Groq/OpenAI-compatible endpoints 400'd on the second turn of any
+  tool round-trip, and Anthropic received a fabricated `tool_use_id="unknown"`.
+- **Gemini silently dropped the `tools` parameter** — a tool-equipped agent on
+  Gemini could never actually call a tool, with no error raised. Gemini now
+  forwards tool schemas and parses `function_call`/`function_response` parts
+  correctly for multi-turn tool conversations.
+- **Provider-exhaustion failures looked like successful output.**
+  `AllModelsExhaustedError` was converted to a plain `"[ERROR] ..."` string in
+  `AgentResult.output` with no other signal — `Team`, `AgentPipeline`, and
+  `GroupChat` would cascade that string into the next agent's input as if it
+  were real work. Added `AgentResult.success`; `Team`/`AgentPipeline`/`GroupChat`
+  now stop and surface the failure instead of propagating it.
+- **`GroupChat`'s round-robin speaker selection skipped the first agent**
+  (off-by-one); `ConversableAgent.reply()` hardcoded `cost=0.0` regardless of
+  actual spend; the `auto` speaker-selection coordinator's own LLM call was
+  never counted toward total cost. All three fixed.
+
+### Fixed — making the existing feature claims true
+- **The context engine's "multi-factor relevance decay" was dead code** —
+  `update_relevance()` had zero callers anywhere, so every message's
+  relevance stayed at its default and compaction could never find anything
+  eligible to compress. Now called every reasoning step, with a real
+  semantic-similarity term computed from the configured embedder.
+- **Context compaction was a guaranteed no-op** in the live agent path — the
+  call site never passed an embedder or LLM router, so it always fell back to
+  naive truncation. Now passes both; also fixed a second silent no-op where a
+  zero-vector embedder (no embedding key configured) caused clustering to
+  degenerate into one message per cluster — it now falls back to a single
+  real LLM-summarized group instead.
+- **The observability tracer recorded zero spans.** `span()`, `log_step()`,
+  and `log_llm_call()` were fully implemented but never called — every
+  exported trace had `spans: []`, so replay and ghost-debug had nothing to
+  work with. The tracer is now instantiated fresh per run (it was previously
+  shared across an agent's entire lifetime, leaking spans between runs and
+  never getting the correct `run_id`) and fed real LLM-call and tool-call
+  spans with timing, tokens, and cost.
+- **The default memory backend never persisted anything** — `InMemoryBackend`
+  is plain Python dicts, wiped on every restart, and the `qdrant`/`pinecone`/
+  `chroma` backends referenced in code didn't exist as files (a
+  `ModuleNotFoundError`, not the documented behavior). Added `SQLiteBackend`
+  (`backend="sqlite"`, stdlib-only, zero new dependency) — verified to
+  survive a simulated process restart. The three unimplemented backends now
+  raise a clear `NotImplementedError` instead of a confusing import crash.
+- **The eval suite's tool-selection and trajectory scorers always scored
+  against a hardcoded empty list** — `AgentResult` never exposed the
+  underlying `ToolCallRecord`s. Added `AgentResult.tool_call_records`; both
+  scorers now score real tool-call data (verified live: a case with
+  `expected_tools=["add"]` now correctly scores `1.0` instead of always `0.0`
+  whenever tools were expected).
+- **The pre-call budget gate estimated cost with a single flat rate**
+  (`$0.005/1k` tokens) regardless of model, ignoring the ~800x price spread
+  between the cheapest and most expensive supported models. Now uses the same
+  per-model pricing table as the real post-call cost calculation.
+- **The plan cache's "savings" were a hardcoded guess** (`avg_cost_usd * 0.5`)
+  — and the retrieved plan was never actually used, so a cache "hit" changed
+  nothing about agent behavior. The cached plan is now injected as a real
+  hint into the reasoning loop, and savings are computed from the actual
+  measured cost delta of the run that used it.
+- **`AgentConfig.guardrails` was completely unreachable** from the public
+  `Agent(...)` constructor — the field existed, but `Agent.__init__`'s
+  `**extra_config` catch-all was never forwarded to `AgentConfig`, so
+  anything passed that way (including `guardrails=[...]`, `hitl=...`,
+  `tenant_id=...`) was silently dropped. Now forwarded. Also fixed a latent
+  crash this exposed: `KeywordBlockGuard` and `SchemaGuard` required a
+  positional constructor argument, so naming them by string (the only
+  supported configuration path) would have raised `TypeError` the moment
+  anyone used it — both now have safe defaults.
+- **Corrected the README's eval-suite scorer count** (was described as "5
+  scorers" naming one, "output format", that doesn't exist; it's actually 6:
+  factual accuracy, tool selection, trajectory adherence, cost efficiency,
+  step efficiency, and output quality).
+
+### Added
+- **`Agent.__init__(handoffs=[...])`** — a first-class handoff primitive.
+  Each target agent gets a `transfer_to_<name>` tool the model can call
+  directly (matching the OpenAI Agents SDK pattern); on a handoff, control
+  and the conversation genuinely transfer to the target agent, whose
+  `AgentResult` is returned with `handoff_chain` recording the path and cost
+  from every agent in the chain summed. Verified live: a triage agent handed
+  a billing question to a `BillingAgent`, and the final response was
+  genuinely produced by the target, not the triage agent.
+- **`helix.tools.mcp.MCPToolSource`** — MCP (Model Context Protocol) client
+  support (`pip install "helix-framework[mcp]"`). Connects to any MCP server
+  over stdio and exposes its tools as ordinary `RegisteredTool`s usable
+  directly in `Agent(tools=[...])`. Verified live end-to-end against a real
+  MCP server subprocess: tool discovery, schema translation, and tool
+  execution through the actual wire protocol, then through a full agent run
+  against a live LLM.
+- **`safety.guardrails.PromptInjectionGuard`** — heuristic jailbreak/
+  prompt-injection detector (instruction override, persona hijack,
+  restriction-bypass requests, "developer mode", system-prompt exfiltration
+  attempts). Pattern-based, not a trained classifier — a real first line of
+  defense where previously there was none. Guardrails were also only ever
+  checked on model *output*; the incoming task is now checked too, before it
+  ever reaches context, memory, or the LLM.
+- **Native structured-output mode.** `StructuredOutputConfig.use_native` was
+  declared but never read; the JSON-parse-and-retry path is now backed by
+  `response_format={"type": "json_object"}` on retry (OpenAI/Azure/
+  OpenAI-compatible providers honor it; others accept and ignore it, no
+  regression). Also fixed the correction prompt itself, which was
+  interpolating a Python class repr (`"<class '...'>"`) instead of the
+  model's real JSON schema.
+- **`AgentResult.tool_call_records`, `.handoff_chain`, `.success`** — new
+  fields/property for programmatic access to full tool-call records, the
+  agent handoff path, and a clean success check that doesn't require string-
+  matching `"[ERROR]"` in `.output`.
+
+### Changed
+- **Breaking:** agents no longer inherit the global tool registry by
+  default (see above). Pass `tools=[...]` explicitly, or set
+  `inherit_global_tools=True` to restore the old behavior.
+- **Breaking:** `ConversableAgent.reply()` now returns `(content, cost_usd)`
+  instead of just `content` — the old signature made it structurally
+  impossible to report real cost.
+- 34 new regression tests (`tests/test_v05_fixes.py`), each tied to a
+  specific fix above.
+
+---
+
 ## [0.3.4] — 2026-02-26
 
 ### Added

@@ -149,18 +149,16 @@ class MemoryStore:
             from helix.memory.backends.inmemory import InMemoryBackend
 
             return InMemoryBackend()
-        if backend_name == "qdrant":
-            from helix.memory.backends.qdrant import QdrantBackend
+        if backend_name == "sqlite":
+            from helix.memory.backends.sqlite import SQLiteBackend
 
-            return QdrantBackend()
-        if backend_name == "pinecone":
-            from helix.memory.backends.pinecone import PineconeBackend
-
-            return PineconeBackend()
-        if backend_name == "chroma":
-            from helix.memory.backends.chroma import ChromaBackend
-
-            return ChromaBackend()
+            return SQLiteBackend()
+        if backend_name in ("qdrant", "pinecone", "chroma"):
+            raise NotImplementedError(
+                f"The '{backend_name}' memory backend is not implemented yet. "
+                "Use backend='inmemory' (ephemeral, default) or backend='sqlite' "
+                "(persists across restarts, no extra dependency required)."
+            )
         raise ValueError(f"Unknown memory backend: {backend_name}")
 
     def _create_embedder(self) -> Any:

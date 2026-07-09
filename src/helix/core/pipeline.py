@@ -67,6 +67,10 @@ class AgentPipeline:
         result: Any = None
         for agent in self._agents:
             result = await agent.run(current, session_id=session_id)
+            if getattr(result, "error", None) is not None:
+                # Stop the chain rather than feeding a failed agent's error
+                # text to the next agent as if it were real input.
+                return result  # type: ignore[return-value]
             current = str(result.output)
         return result  # type: ignore[return-value]
 

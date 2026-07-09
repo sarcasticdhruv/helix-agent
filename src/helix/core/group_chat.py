@@ -96,13 +96,13 @@ class ConversableAgent(Agent):
         self,
         conversation_history: list[ChatMessage],
         task: str,
-    ) -> str:
-        """Generate a reply based on the full conversation history."""
+    ) -> tuple[str, float]:
+        """Generate a reply based on the full conversation history. Returns (content, cost_usd)."""
         if self.human_input:
             # Human-in-the-loop: read from stdin
             history_text = "\n".join(str(m) for m in conversation_history)
             print(f"\n--- Conversation so far ---\n{history_text}\n")
-            return input(f"[{self.name} — YOUR REPLY]: ").strip()
+            return input(f"[{self.name} — YOUR REPLY]: ").strip(), 0.0
 
         # Build a conversation-aware prompt
         history_text = "\n".join(str(m) for m in conversation_history[-10:])  # last 10
@@ -113,7 +113,9 @@ class ConversableAgent(Agent):
             f"Be concise and focused."
         )
         result: AgentResult = await self.run(prompt)
-        return str(result.output)
+        if result.error is not None:
+            raise RuntimeError(result.error)
+        return str(result.output), result.cost_usd
 
 
 # ---------------------------------------------------------------------------
@@ -229,14 +231,17 @@ class GroupChat:
 
         for round_num in range(1, self._max_rounds + 1):
             # Pick next speaker
-            speaker = await self._pick_speaker(round_num, last_speaker_idx, messages, task)
+            speaker, pick_cost = await self._pick_speaker(
+                round_num, last_speaker_idx, messages, task
+            )
             last_speaker_idx = self._agents.index(speaker)
+            total_cost += pick_cost
 
             # Generate reply
             try:
                 if isinstance(speaker, ConversableAgent):
-                    content = await speaker.reply(messages, task)
-                    cost = 0.0
+                    content, cost = await speaker.reply(messages, task)
+                    total_cost += cost
                 else:
                     # Plain Agent — build contextual prompt
                     history_text = "\n".join(str(m) for m in messages[-10:])
@@ -246,6 +251,12 @@ class GroupChat:
                         f"Provide your perspective as {speaker.name}."
                     )
                     result: AgentResult = await speaker.run(prompt)
+                    if result.error is not None:
+                        # agent.run() never raises on provider failure — it
+                        # returns a normal-looking result with .error set —
+                        # so check explicitly instead of relying on except.
+                        total_cost += result.cost_usd
+                        raise RuntimeError(result.error)
                     content = str(result.output)
                     cost = result.cost_usd
                     total_cost += cost
@@ -309,29 +320,29 @@ class GroupChat:
         last_idx: int,
         messages: list[ChatMessage],
         task: str,
-    ) -> Agent | ConversableAgent:
+    ) -> tuple[Agent | ConversableAgent, float]:
         strategy = self._speaker_selection
 
         if strategy == "round_robin" or strategy is None:
-            return self._agents[round_num % len(self._agents)]
+            return self._agents[(round_num - 1) % len(self._agents)], 0.0
 
         if strategy == "random":
-            return random.choice(self._agents)
+            return random.choice(self._agents), 0.0
 
         if strategy == "auto":
             return await self._auto_pick(messages, task)
 
         if callable(strategy):
-            return strategy(self._agents, messages)
+            return strategy(self._agents, messages), 0.0
 
         # Fallback
-        return self._agents[round_num % len(self._agents)]
+        return self._agents[(round_num - 1) % len(self._agents)], 0.0
 
     async def _auto_pick(
         self,
         messages: list[ChatMessage],
         task: str,
-    ) -> Agent | ConversableAgent:
+    ) -> tuple[Agent | ConversableAgent, float]:
         """Use the first available agent as a coordinator to pick the next speaker."""
         coordinator = self._agents[0]
         names = [a.name for a in self._agents]
@@ -346,10 +357,11 @@ class GroupChat:
         )
         result: AgentResult = await coordinator.run(prompt)
         picked_name = str(result.output).strip().strip('"').strip("'")
+        pick_cost = result.cost_usd
 
         for agent in self._agents:
             if agent.name.lower() == picked_name.lower():
-                return agent
+                return agent, pick_cost
 
         # Fallback: next in round-robin
         last_idx = 0
@@ -358,4 +370,4 @@ class GroupChat:
                 if a.name == messages[-1].speaker:
                     last_idx = i
                     break
-        return self._agents[(last_idx + 1) % len(self._agents)]
+        return self._agents[(last_idx + 1) % len(self._agents)], pick_cost

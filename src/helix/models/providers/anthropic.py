@@ -9,6 +9,7 @@ Applies prefix cache breakpoints automatically for long system prompts.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import AsyncIterator
 from typing import Any
@@ -150,8 +151,11 @@ class AnthropicProvider(LLMProvider):
 
     def _prepare_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
-        Convert Helix tool messages to Anthropic's tool_result format.
-        Anthropic requires tool results inside user messages.
+        Convert Helix tool messages to Anthropic's tool_use/tool_result format.
+        Anthropic requires:
+          - the assistant turn that requested a tool call to carry a
+            `tool_use` content block (matched by id to the tool_result below)
+          - tool results inside a user message, as a `tool_result` block
         """
         prepared = []
         for m in messages:
@@ -172,6 +176,25 @@ class AnthropicProvider(LLMProvider):
                         ],
                     }
                 )
+            elif role == "assistant" and m.get("tool_calls"):
+                blocks: list[dict[str, Any]] = []
+                if content:
+                    blocks.append({"type": "text", "text": content})
+                for tc in m["tool_calls"]:
+                    fn = tc.get("function", {})
+                    try:
+                        args = json.loads(fn.get("arguments") or "{}")
+                    except Exception:
+                        args = {}
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.get("id", ""),
+                            "name": fn.get("name", ""),
+                            "input": args,
+                        }
+                    )
+                prepared.append({"role": "assistant", "content": blocks})
             else:
                 prepared.append({"role": role, "content": content})
 
@@ -214,6 +237,7 @@ class AnthropicProvider(LLMProvider):
                 args = block.input if isinstance(block.input, dict) else {}
                 tool_calls.append(
                     ToolCallRecord(
+                        id=block.id,
                         tool_name=block.name,
                         arguments=args,
                     )
