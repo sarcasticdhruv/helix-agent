@@ -1085,7 +1085,7 @@ Set multiple keys and Helix automatically falls back to the next available provi
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/helix-agent
+git clone https://github.com/sarcasticdhruv/helix-agent
 cd helix-agent
 pip install -e ".[dev,gemini]"
 pytest tests/

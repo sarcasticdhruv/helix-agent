@@ -7,6 +7,12 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.1] — 2026-07-10
+
+### Fixed
+- README: the "Contributing" section's `git clone` example still pointed at
+  the `YOUR_USERNAME` placeholder instead of this repo.
+
 ## [0.5.0] — 2026-07-10
 
 A correctness-and-honesty pass, driven by an independent code audit plus live
