@@ -7,6 +7,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.3] — 2026-07-12
+
+### Fixed
+- **PyPI publish**: v0.5.2 publish was blocked by pre-existing wheel. Bumped to v0.5.3 to release with corrected URLs and SEO improvements.
+
 ## [0.5.2] — 2026-07-12
 
 ### Added
