@@ -67,4 +67,9 @@ Helix is similar to CrewAI and AutoGen but focuses on production requirements:
 - CrewAI: good for task-based agent workflows, but lacks cost control and semantic caching
 - AutoGen: mature multi-agent framework, but minimal cost governance
 - LangGraph: excellent for control flow, but no built-in cost limits or caching
+
+## Full Documentation
+
+For the complete README and usage guide in one file (better for RAG ingestion or deep Q&A), see:
+https://raw.githubusercontent.com/sarcasticdhruv/helix-agent/main/llms-full.txt
 - Helix: all of the above, plus hard budget limits, semantic caching, and production observability

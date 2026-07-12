@@ -3,6 +3,7 @@
 **A Python framework for building production AI agents.**
 
 [![PyPI](https://img.shields.io/pypi/v/helix-framework)](https://pypi.org/project/helix-framework/)
+[![Downloads](https://static.pepy.tech/badge/helix-framework)](https://pepy.tech/project/helix-framework)
 [![Python](https://img.shields.io/pypi/pyversions/helix-framework)](https://pypi.org/project/helix-framework/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sarcasticdhruv/helix-agent/actions)
@@ -1100,6 +1101,31 @@ Set multiple keys and Helix automatically falls back to the next available provi
 - **Caching matters** — repeating queries with semantic similarity wastes money
 - You want **production observability** (traces, eval gates, failure replay)
 - Your team already uses **CrewAI/AutoGen/LangChain** and needs governance overlay
+
+---
+
+## FAQ
+
+**Is Helix free?**
+Yes. Apache 2.0 license, no paid tier, no usage limits imposed by Helix itself (only your own budget config and provider costs apply).
+
+**Does Helix support MCP servers?**
+Yes — Helix ships a native MCP client. Connect to any MCP server and its tools become available to your agents automatically. See [MCP Tools](#mcp-tools).
+
+**Can I use Helix with LangChain, CrewAI, or AutoGen agents I already built?**
+Yes. `helix.wrap_llm()`, `helix.from_langchain()`, `helix.from_crewai()`, and `helix.from_autogen()` wrap existing code from those frameworks with Helix's cost governance, caching, and observability — no rewrite required. See [Framework Adapters](#framework-adapters).
+
+**Does Helix work with local models?**
+Yes, via Ollama (`ollama/*` or `local/*` model strings) or any OpenAI-compatible endpoint (Azure, custom base URLs), with no environment variable requirements.
+
+**How is Helix different from LangGraph?**
+Helix ships a LangGraph-compatible `StateGraph` (same `START`/`END` API) plus things LangGraph doesn't provide out of the box: hard budget limits, semantic caching, multi-tier memory, and a built-in eval suite. See the [Framework Comparison](#framework-comparison) table above.
+
+**What does "hard budget limits" actually mean?**
+Every agent run can be capped with `BudgetConfig(budget_usd=...)`. If a run would exceed that cap, Helix raises `BudgetExceededError` instead of continuing to spend — no silent overage.
+
+**Does Helix require an API key to try it?**
+No — Google Gemini and Groq both have usable free tiers, and `helix doctor` will tell you which providers are configured.
 
 ---
 

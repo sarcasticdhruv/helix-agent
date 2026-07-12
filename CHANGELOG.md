@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.4] — 2026-07-12
+
+### Added
+- **CITATION.cff**: Machine-readable citation metadata for academic/research reference
+- **FAQ section in README**: Direct Q&A on licensing, MCP support, framework interop, local models, and budget enforcement — formatted for LLM answer extraction
+- **llms-full.txt**: Full README + USAGE.md concatenated into one file for RAG ingestion and deep LLM Q&A
+- **pepy.tech download badge**: Added to README badge row
+
+### Improved
+- **GEO**: llms.txt now links to llms-full.txt; FAQ content is structured for direct LLM quoting
+
 ## [0.5.3] — 2026-07-12
 
 ### Fixed

@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Helix"
+authors:
+  - family-names: Choudhary
+    given-names: Dhruv
+repository-code: "https://github.com/sarcasticdhruv/helix-agent"
+url: "https://pypi.org/project/helix-framework/"
+license: Apache-2.0
+version: 0.5.3
+date-released: 2026-07-12
