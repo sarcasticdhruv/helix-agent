@@ -1,0 +1,70 @@
+# Helix Framework
+
+Helix is a production-grade Python framework for building AI agents with cost governance, semantic caching, multi-agent teams, and built-in evaluation.
+
+## Key Features
+
+- **Hard Cost Limits**: Budget enforcement prevents runaway LLM spend
+- **Semantic Caching**: Tier 1 embedding-based cache + prefix caching (3x cost reduction on repeated queries)
+- **Multi-Tier Memory**: Short-term, episodic, and persistent (SQLite) memory backends
+- **Multi-Agent Teams**: Agent handoffs, group chat, YAML-based task pipelines
+- **MCP Tool Support**: Native integration with Model Context Protocol servers
+- **Built-in Eval**: 6-scorer evaluation suite with regression gates
+- **Framework Adapters**: Wrap LangChain, CrewAI, AutoGen agents with Helix governance
+
+## Who Uses Helix
+
+Teams building production AI agents that need:
+- Cost control (not a lab experiment)
+- Caching for cost reduction
+- Memory and context management
+- Multi-step, multi-agent coordination
+- Production observability and audit trails
+
+## Quick Start
+
+```python
+import helix
+
+agent = helix.Agent(
+    name="Researcher",
+    role="Research analyst",
+    goal="Find accurate, cited answers.",
+)
+
+result = helix.run(agent, "What is quantum entanglement?")
+print(f"Output: {result.output}")
+print(f"Cost: ${result.cost_usd:.4f}")
+```
+
+## Supported Providers
+
+- Google Gemini (free tier)
+- OpenAI (GPT-4o, o1, o3)
+- Anthropic (Claude Opus, Sonnet, Haiku)
+- Groq (Llama, Mixtral, Gemma)
+- Mistral, Cohere, Together, OpenRouter, DeepSeek, xAI, Perplexity
+- Ollama, Azure OpenAI, and custom OpenAI-compatible endpoints
+
+## Documentation
+
+- **GitHub**: https://github.com/sarcasticdhruv/helix-agent
+- **PyPI**: https://pypi.org/project/helix-framework/
+- **License**: Apache 2.0
+
+## Frameworks Helix Integrates With
+
+- LangChain (via `helix.from_langchain()`)
+- CrewAI (via `helix.from_crewai()`)
+- AutoGen (via `helix.from_autogen()`)
+- LangGraph (StateGraph-compatible)
+
+Helix adds cost governance and caching to all of these without replacing them.
+
+## Comparison
+
+Helix is similar to CrewAI and AutoGen but focuses on production requirements:
+- CrewAI: good for task-based agent workflows, but lacks cost control and semantic caching
+- AutoGen: mature multi-agent framework, but minimal cost governance
+- LangGraph: excellent for control flow, but no built-in cost limits or caching
+- Helix: all of the above, plus hard budget limits, semantic caching, and production observability

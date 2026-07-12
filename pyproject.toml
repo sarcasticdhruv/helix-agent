@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-framework"
-version = "0.5.1"
+version = "0.5.2"
 description = "Production-grade AI agent framework — cost governance, memory, caching, multi-agent teams, and built-in eval"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -93,11 +93,10 @@ all = [
 helix = "helix.cli.__main__:main"
 
 [project.urls]
-# TODO: replace "your-org" with your actual GitHub username/org
-Homepage   = "https://github.com/your-org/helix-agent"
-Repository = "https://github.com/your-org/helix-agent"
-Changelog  = "https://github.com/your-org/helix-agent/blob/main/CHANGELOG.md"
-"Bug Tracker" = "https://github.com/your-org/helix-agent/issues"
+Homepage   = "https://github.com/sarcasticdhruv/helix-agent"
+Repository = "https://github.com/sarcasticdhruv/helix-agent"
+Changelog  = "https://github.com/sarcasticdhruv/helix-agent/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/sarcasticdhruv/helix-agent/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

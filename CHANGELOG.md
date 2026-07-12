@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.2] — 2026-07-12
+
+### Added
+- **PyPI project metadata**: Fixed broken repository/homepage URLs (replace `your-org` placeholder with actual GitHub org)
+- **Framework comparison table**: Added to README showing Helix vs CrewAI, AutoGen, LangGraph — highlights cost governance, semantic caching, and multi-tier memory as unique strengths
+- **llms.txt discovery file**: Added for AI crawler discovery (Perplexity, Claude, etc.) — documents key features, providers, use cases, and framework integrations
+
+### Improved
+- **SEO/GEO**: PyPI links now correct; README comparison table improves LLM-based recommendations; llms.txt follows emerging AI crawler convention
+
 ## [0.5.1] — 2026-07-10
 
 ### Fixed
