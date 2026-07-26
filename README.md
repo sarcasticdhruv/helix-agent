@@ -1148,13 +1148,13 @@ No — Google Gemini and Groq both have usable free tiers, and `helix doctor` wi
 Not if you wrap it with Helix: `helix.from_crewai(crew, budget_usd=5.00)` (or `from_langchain`/`from_autogen`) puts a hard `BudgetConfig`-backed cap on top of the existing crew and raises `BudgetExceededError` the moment spend would cross that line, no matter how many times a failing tool call retries. See [Framework Adapters](#framework-adapters).
 
 **Does a multi-agent Group Chat need a manual reply cap to stop token spend from multiplying?**
-No — `helix.GroupChat` takes `max_rounds`, `termination_keyword`, and `termination_fn` directly, so you can bound a conversation without hand-rolling an AutoGen-style `max_consecutive_auto_reply` limit. See [Handoffs](#handoffs).
+No — `helix.GroupChat` takes `max_rounds`, `termination_keyword`, and `termination_fn` directly, so you can bound a conversation without hand-rolling an AutoGen-style `max_consecutive_auto_reply` limit. See [Group Chat](#group-chat).
 
 **How would I notice an agent getting expensive before the bill arrives, not after?**
 Every agent can emit live cost telemetry through `on_event` — the `step_end` event carries `cost_so_far` — and `BudgetConfig(warn_at_pct=0.8)` fires a warning at 80% of budget well before `BudgetExceededError` would trigger. See [Event Hooks](#event-hooks) and [Budget Enforcement](#budget-enforcement).
 
 **How do I keep a human in the loop instead of letting agents run fully autonomously?**
-Add a `helix.HumanAgent` to any `GroupChat` — it prompts the terminal for your input each turn just like any other agent in the rotation, giving you a manual checkpoint instead of a fully autonomous loop. Pair it with Helix's guardrails (prompt injection blocking, audit log) for a record of what ran. See [Handoffs](#handoffs) and [Guardrails](#guardrails).
+Add a `helix.HumanAgent` to any `GroupChat` — it prompts the terminal for your input each turn just like any other agent in the rotation, giving you a manual checkpoint instead of a fully autonomous loop. Pair it with Helix's guardrails (prompt injection blocking, audit log) for a record of what ran. See [Group Chat](#group-chat) and [Guardrails](#guardrails).
 
 ---
 
