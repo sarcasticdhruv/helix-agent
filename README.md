@@ -1,12 +1,25 @@
-# Helix
+<p align="center">
+  <img src="assets/banner.png" alt="Helix — production AI agent framework" width="600">
+</p>
 
-**A Python framework for building production AI agents.**
+<p align="center"><b>Production AI agents: hard budget limits, semantic caching, multi-agent teams, MCP tools.</b></p>
 
+<p align="center">
 [![PyPI](https://img.shields.io/pypi/v/helix-framework)](https://pypi.org/project/helix-framework/)
 [![Downloads](https://static.pepy.tech/badge/helix-framework)](https://pepy.tech/project/helix-framework)
 [![Python](https://img.shields.io/pypi/pyversions/helix-framework)](https://pypi.org/project/helix-framework/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sarcasticdhruv/helix-agent/actions)
+</p>
+
+<p align="center">
+<a href="#installation">Install</a> ·
+<a href="#quickstart">Quickstart</a> ·
+<a href="USAGE.md">Docs</a> ·
+<a href="examples/">Examples</a> ·
+<a href="llms.txt">llms.txt</a> ·
+<a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
 Helix gives you agents that actually behave in production: hard budget limits, semantic caching for repeated queries, opt-in persistent memory (SQLite, zero extra dependency), MCP tool support, agent handoffs, multi-agent teams, YAML-based task pipelines, a LangGraph-compatible `StateGraph`, and a 6-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
 
