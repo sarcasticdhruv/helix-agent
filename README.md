@@ -21,6 +21,10 @@
 <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
+<p align="center">
+  <img src="assets/demo.gif" alt="Helix stopping a runaway agent at its budget cap" width="700">
+</p>
+
 Helix gives you agents that actually behave in production: hard budget limits, semantic caching for repeated queries, opt-in persistent memory (SQLite, zero extra dependency), MCP tool support, agent handoffs, multi-agent teams, YAML-based task pipelines, a LangGraph-compatible `StateGraph`, and a 6-scorer eval suite. It works out of the box with OpenAI, Anthropic, Gemini, Groq, Mistral, and 8 other providers.
 
 The `import helix` API is intentionally close to what you already know from AutoGen, CrewAI, and LangGraph, but with the production layer those frameworks leave to you: cost governance, caching, memory, observability, and safety controls.
