@@ -52,3 +52,10 @@ if __name__ == "__main__":
         "Production AI agents: budget limits, semantic caching, multi-agent teams",
         "assets/banner.png",
     )
+    render_banner(
+        "HELIX",
+        "Production AI agents: budget limits, semantic caching, multi-agent teams",
+        "assets/social-preview.png",
+        font_size=36,
+        canvas_size=(1280, 640),
+    )
