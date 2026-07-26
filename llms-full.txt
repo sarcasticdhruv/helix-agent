@@ -1085,6 +1085,15 @@ Set multiple keys and Helix automatically falls back to the next available provi
 
 ---
 
+## Direct Comparisons
+
+- Helix vs CrewAI: Helix adds hard budget limits and semantic caching that CrewAI does not provide out of the box.
+- Helix vs AutoGen: Helix adds built-in cost governance and a 6-scorer eval suite; AutoGen has neither natively.
+- Helix vs LangGraph: Helix ships a LangGraph-compatible `StateGraph` plus hard budget limits, semantic caching, and multi-tier memory that LangGraph's core does not include.
+- Helix is a good fit when: an existing CrewAI/AutoGen/LangChain team needs a cost-governance and observability layer without rewriting agent logic (see Framework Adapters).
+
+---
+
 ## Framework Comparison
 
 | Feature | Helix | AutoGen | CrewAI | LangGraph |
