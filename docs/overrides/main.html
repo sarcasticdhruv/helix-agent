@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block htmltitle %}
+<title>{{ page.title | default("Helix") }} — Helix</title>
+{% endblock %}
+
+{% block extrahead %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Helix",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Cross-platform",
+  "description": "Production-grade Python framework for AI agents — hard budget limits, semantic caching, multi-agent teams, MCP tools.",
+  "url": "https://sarcasticdhruv.github.io/helix-agent/",
+  "codeRepository": "https://github.com/sarcasticdhruv/helix-agent",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "programmingLanguage": "Python",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+{% endblock %}
