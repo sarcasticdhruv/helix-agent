@@ -1,5 +1,11 @@
 # Quickstart
 
+Install Helix from PyPI:
+
+```bash
+pip install helix-framework
+```
+
 ```python
 import helix
 

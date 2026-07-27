@@ -5,11 +5,11 @@
 <p align="center"><b>Production AI agents: hard budget limits, semantic caching, multi-agent teams, MCP tools.</b></p>
 
 <p align="center">
-[![PyPI](https://img.shields.io/pypi/v/helix-framework)](https://pypi.org/project/helix-framework/)
-[![Downloads](https://static.pepy.tech/badge/helix-framework)](https://pepy.tech/project/helix-framework)
-[![Python](https://img.shields.io/pypi/pyversions/helix-framework)](https://pypi.org/project/helix-framework/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/sarcasticdhruv/helix-agent/actions)
+<a href="https://pypi.org/project/helix-framework/"><img src="https://img.shields.io/pypi/v/helix-framework" alt="PyPI"></a>
+<a href="https://pepy.tech/project/helix-framework"><img src="https://static.pepy.tech/badge/helix-framework" alt="Downloads"></a>
+<a href="https://pypi.org/project/helix-framework/"><img src="https://img.shields.io/pypi/pyversions/helix-framework" alt="Python"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License"></a>
+<a href="https://github.com/sarcasticdhruv/helix-agent/actions"><img src="https://img.shields.io/badge/tests-passing-brightgreen" alt="Tests"></a>
 </p>
 
 <p align="center">
