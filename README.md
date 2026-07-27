@@ -15,7 +15,7 @@
 <p align="center">
 <a href="#installation">Install</a> ·
 <a href="#quickstart">Quickstart</a> ·
-<a href="USAGE.md">Docs</a> ·
+<a href="https://sarcasticdhruv.github.io/helix-agent/">Docs</a> ·
 <a href="examples/">Examples</a> ·
 <a href="llms.txt">llms.txt</a> ·
 <a href="CONTRIBUTING.md">Contributing</a>
