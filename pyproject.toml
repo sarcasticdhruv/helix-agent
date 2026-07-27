@@ -93,9 +93,10 @@ all = [
 helix = "helix.cli.__main__:main"
 
 [project.urls]
-Homepage   = "https://github.com/sarcasticdhruv/helix-agent"
-Repository = "https://github.com/sarcasticdhruv/helix-agent"
-Changelog  = "https://github.com/sarcasticdhruv/helix-agent/blob/main/CHANGELOG.md"
+Homepage      = "https://github.com/sarcasticdhruv/helix-agent"
+Repository    = "https://github.com/sarcasticdhruv/helix-agent"
+Documentation = "https://github.com/sarcasticdhruv/helix-agent#readme"
+Changelog     = "https://github.com/sarcasticdhruv/helix-agent/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/sarcasticdhruv/helix-agent/issues"
 
 [tool.setuptools.packages.find]

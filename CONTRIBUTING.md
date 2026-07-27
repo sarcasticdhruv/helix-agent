@@ -36,9 +36,10 @@ By participating in this project you agree to abide by the [Code of Conduct](COD
 ## Development setup
 
 ```bash
-# 1. Fork + clone
-git clone https://github.com/YOUR_USERNAME/helix-agent.git
+# 1. Fork the repo on GitHub, then clone your fork
+git clone https://github.com/<your-username>/helix-agent.git
 cd helix-agent
+git remote add upstream https://github.com/sarcasticdhruv/helix-agent.git
 
 # 2. Create a virtual environment
 python -m venv .venv
