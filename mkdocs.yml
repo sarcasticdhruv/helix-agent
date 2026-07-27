@@ -1,0 +1,32 @@
+site_name: Helix
+site_description: Production-grade Python framework for AI agents — cost governance, memory, caching, multi-agent teams, and built-in eval.
+site_url: https://sarcasticdhruv.github.io/helix-agent/
+repo_url: https://github.com/sarcasticdhruv/helix-agent
+repo_name: sarcasticdhruv/helix-agent
+docs_dir: docs/site
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    scheme: slate
+    primary: black
+  features:
+    - navigation.instant
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Agents: agents.md
+  - Multi-Agent Teams: multi-agent-teams.md
+  - MCP Tools: mcp-tools.md
+  - Evaluation: evaluation.md
+  - Framework Comparison: framework-comparison.md
+  - FAQ: faq.md
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - admonition
